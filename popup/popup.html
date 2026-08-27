@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hold Still</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="panel">
+      <header class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M7.5 5.5 9 3h6l1.5 2.5H19A2.5 2.5 0 0 1 21.5 8v9A2.5 2.5 0 0 1 19 19.5H5A2.5 2.5 0 0 1 2.5 17V8A2.5 2.5 0 0 1 5 5.5h2.5Z" />
+            <circle cx="12" cy="12.5" r="3.5" />
+          </svg>
+        </div>
+        <div>
+          <h1>Hold Still</h1>
+          <p>Capture exactly what you need</p>
+        </div>
+      </header>
+
+      <section class="output-setting" aria-labelledby="output-title">
+        <div class="output-heading">
+          <strong id="output-title">Output</strong>
+          <small>Choose what happens after capture</small>
+        </div>
+        <div class="output-options" role="group" aria-label="Screenshot output">
+          <button
+            class="output-option"
+            data-output="download"
+            type="button"
+            aria-pressed="true"
+          >
+            Download
+          </button>
+          <button
+            class="output-option"
+            data-output="copy"
+            type="button"
+            aria-pressed="false"
+          >
+            Copy
+          </button>
+        </div>
+      </section>
+
+      <section class="capture-list" aria-label="Capture modes">
+        <button class="capture-card" data-mode="full-page" type="button">
+          <span class="icon-box" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="5" y="2.5" width="14" height="19" rx="2" />
+              <path d="M8.5 7h7M8.5 11h7M8.5 15h4" />
+            </svg>
+          </span>
+          <span class="copy">
+            <strong>Full page</strong>
+            <small>Scroll and stitch the entire page</small>
+          </span>
+          <kbd>Alt Shift F</kbd>
+        </button>
+
+        <button class="capture-card" data-mode="viewport" type="button">
+          <span class="icon-box" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="14" rx="2" />
+              <path d="M8 21h8M12 18v3" />
+            </svg>
+          </span>
+          <span class="copy">
+            <strong>Current viewport</strong>
+            <small>Capture what is visible right now</small>
+          </span>
+          <kbd>Alt Shift V</kbd>
+        </button>
+
+        <button class="capture-card" data-mode="selection" type="button">
+          <span class="icon-box" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+              <rect x="8" y="8" width="8" height="8" rx="1" />
+            </svg>
+          </span>
+          <span class="copy">
+            <strong>Selected area</strong>
+            <small>Drag a box anywhere on the page</small>
+          </span>
+          <kbd>Alt Shift S</kbd>
+        </button>
+      </section>
+
+      <div id="status" class="status" role="status" aria-live="polite">
+        Choose where the PNG should go.
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

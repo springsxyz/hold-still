@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #17130f;
+  background: #f8f5ef;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  display: grid;
+  min-height: 100vh;
+  margin: 0;
+  place-items: center;
+  background:
+    radial-gradient(circle at 100% 0, rgba(244, 114, 75, 0.2), transparent 42%),
+    #f8f5ef;
+}
+
+.copy-panel {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 22px;
+}
+
+.mark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 14px;
+  color: white;
+  background: linear-gradient(145deg, #f05a3f, #c83b2f);
+  box-shadow: 0 9px 22px rgba(200, 59, 47, 0.26);
+}
+
+.mark svg {
+  width: 27px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin-top: 5px;
+  color: #766b61;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+button {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  color: white;
+  background: #d64b37;
+  font: 700 12px/1 system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 7px 18px rgba(200, 59, 47, 0.22);
+}
+
+button:hover {
+  background: #c53f2e;
+}
+
+button:focus-visible {
+  outline: 3px solid rgba(240, 90, 63, 0.3);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

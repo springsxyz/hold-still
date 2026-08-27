@@ -1,0 +1,203 @@
+const captureButtons = [...document.querySelectorAll("[data-mode]")];
+const outputButtons = [...document.querySelectorAll("[data-output]")];
+const status = document.querySelector("#status");
+const POPUP_CLIPBOARD_MESSAGE = "HOLD_STILL_POPUP_COPY";
+let outputMode = "download";
+let statusResetTimer = null;
+let clipboardPermissionGranted = false;
+let outputChangePending = false;
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== POPUP_CLIPBOARD_MESSAGE) return false;
+
+  copyImageToClipboard(message.url).then(
+    () => sendResponse({ ok: true }),
+    (error) => sendResponse({
+      ok: false,
+      error: error?.message || String(error)
+    })
+  );
+  return true;
+});
+
+
+initializeOutput();
+
+for (const button of captureButtons) {
+  button.addEventListener("click", () => startCapture(button.dataset.mode));
+}
+
+for (const button of outputButtons) {
+  button.addEventListener("click", () => chooseOutput(button.dataset.output));
+}
+
+async function initializeOutput() {
+  try {
+    const stored = await chrome.storage.local.get({ outputMode: "download" });
+    clipboardPermissionGranted = await chrome.permissions.contains({
+      permissions: ["clipboardWrite"]
+    });
+    outputMode = stored.outputMode === "copy" ? "copy" : "download";
+
+    if (
+      outputMode === "copy" &&
+      !clipboardPermissionGranted
+    ) {
+      outputMode = "download";
+      await chrome.storage.local.set({ outputMode });
+    }
+
+    renderOutput();
+    setStatus(outputHint(outputMode), "neutral");
+  } catch (error) {
+    outputMode = "download";
+    renderOutput();
+    setStatus(error.message || String(error), "error");
+  }
+}
+
+async function chooseOutput(mode) {
+  if (
+    !["download", "copy"].includes(mode) ||
+    mode === outputMode ||
+    outputChangePending
+  ) return;
+
+  outputChangePending = true;
+  outputMode = mode;
+  renderOutput();
+  const needsPermission =
+    mode === "copy" && !clipboardPermissionGranted;
+  setStatus(
+    needsPermission
+      ? "Waiting for clipboard permission…"
+      : outputHint(mode),
+    needsPermission ? "working" : "neutral"
+  );
+
+  const persistSelection = chrome.storage.local.set({ outputMode });
+
+  try {
+    let granted = true;
+    if (needsPermission) {
+      granted = await chrome.permissions.request({
+        permissions: ["clipboardWrite"]
+      });
+      clipboardPermissionGranted = granted;
+    }
+
+    await persistSelection;
+    if (!granted) {
+      throw new Error("Clipboard access was not granted. Download is selected.");
+    }
+
+    setStatus(outputHint(outputMode), "neutral");
+  } catch (error) {
+    outputMode = "download";
+    await chrome.storage.local.set({ outputMode }).catch(() => {});
+    renderOutput();
+    setStatus(error.message || String(error), "error");
+  } finally {
+    outputChangePending = false;
+  }
+}
+
+async function copyImageToClipboard(url) {
+  if (
+    !url ||
+    !navigator.clipboard?.write ||
+    typeof ClipboardItem !== "function"
+  ) {
+    throw new Error("Chrome could not access the image clipboard.");
+  }
+
+  const blobPromise = fetch(url)
+    .then((response) => {
+      if (!response.ok) throw new Error("Chrome could not read the screenshot.");
+      return response.blob();
+    })
+    .then((blob) =>
+      blob.type === "image/png"
+        ? blob
+        : new Blob([blob], { type: "image/png" })
+    );
+
+  await navigator.clipboard.write([
+    new ClipboardItem({ "image/png": blobPromise })
+  ]);
+}
+
+async function startCapture(mode) {
+  setDisabled(true);
+  setStatus(statusForMode(mode), "working");
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error("No active tab was found.");
+
+    const response = await chrome.runtime.sendMessage({
+      type: "HOLD_STILL_CAPTURE_REQUEST",
+      tabId: tab.id,
+      mode
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || "Capture failed.");
+    }
+
+    setStatus(
+      response.message,
+      mode === "selection" ? "working" : "success"
+    );
+
+    if (mode === "selection") {
+      setTimeout(() => window.close(), 220);
+    } else {
+      setDisabled(false);
+    }
+  } catch (error) {
+    setStatus(error.message || String(error), "error");
+    setDisabled(false);
+  }
+}
+
+function renderOutput() {
+  for (const button of outputButtons) {
+    button.setAttribute(
+      "aria-pressed",
+      String(button.dataset.output === outputMode)
+    );
+  }
+}
+
+function outputHint(mode) {
+  return mode === "copy"
+    ? "Captures will be copied as PNG images."
+    : "Captures will be saved to Downloads.";
+}
+
+function statusForMode(mode) {
+  if (mode === "full-page") return "Capturing and stitching the full page...";
+  if (mode === "selection") return "Opening the area selector...";
+  return "Capturing the current viewport...";
+}
+
+function setStatus(message, tone) {
+  clearTimeout(statusResetTimer);
+  statusResetTimer = null;
+  status.textContent = message;
+  status.dataset.tone = tone;
+
+  if (tone === "success") {
+    statusResetTimer = setTimeout(() => {
+      status.textContent = outputHint(outputMode);
+      status.dataset.tone = "neutral";
+      statusResetTimer = null;
+    }, 3000);
+  }
+}
+
+function setDisabled(disabled) {
+  for (const button of [...captureButtons, ...outputButtons]) {
+    button.disabled = disabled;
+  }
+}

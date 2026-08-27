@@ -1,0 +1,255 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #17130f;
+  background: #f8f5ef;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 388px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(244, 114, 75, 0.18), transparent 36%),
+    #f8f5ef;
+}
+
+.panel {
+  padding: 20px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  color: white;
+  background: linear-gradient(145deg, #f05a3f, #c83b2f);
+  box-shadow: 0 9px 22px rgba(200, 59, 47, 0.28);
+}
+
+.brand-mark svg {
+  width: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.brand p {
+  margin-top: 3px;
+  color: #766b61;
+  font-size: 12px;
+}
+
+
+.output-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 10px 11px;
+  border: 1px solid #e8e0d7;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.output-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.output-heading strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.output-heading small {
+  color: #7c7066;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.output-options {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: #ebe4db;
+}
+
+.output-option {
+  min-width: 68px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  color: #75695f;
+  background: transparent;
+  font: 700 10px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.output-option[aria-pressed="true"] {
+  color: #b83b2d;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(55, 40, 28, 0.12);
+}
+
+.output-option:focus-visible {
+  outline: 3px solid rgba(240, 90, 63, 0.25);
+  outline-offset: 1px;
+}
+
+.output-option:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.capture-list {
+  display: grid;
+  gap: 9px;
+}
+
+.capture-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #e8e0d7;
+  border-radius: 14px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.86);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.capture-card:hover {
+  border-color: #f2a18f;
+  box-shadow: 0 9px 22px rgba(55, 40, 28, 0.09);
+  transform: translateY(-1px);
+}
+
+.capture-card:focus-visible {
+  outline: 3px solid rgba(240, 90, 63, 0.25);
+  outline-offset: 2px;
+}
+
+.capture-card:disabled {
+  cursor: wait;
+  opacity: 0.58;
+  transform: none;
+}
+
+.icon-box {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 11px;
+  color: #d64b37;
+  background: #fff0eb;
+}
+
+.icon-box svg {
+  width: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.copy strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.copy small {
+  overflow: hidden;
+  color: #7c7066;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+kbd {
+  padding: 4px 5px;
+  border: 1px solid #e5ddd4;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  color: #8a7c70;
+  background: #fbf9f6;
+  font: 600 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.status {
+  min-height: 31px;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: #776b61;
+  background: rgba(231, 223, 213, 0.58);
+  font-size: 11px;
+  line-height: 1.35;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.status[data-tone="working"] {
+  color: #9a3412;
+  background: #ffedd5;
+}
+
+.status[data-tone="success"] {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.status[data-tone="error"] {
+  color: #991b1b;
+  background: #fee2e2;
+}
