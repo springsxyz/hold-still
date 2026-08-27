@@ -8,7 +8,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "u
 
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.name, "Hold Still");
-assert.equal(manifest.version, "1.1.10");
+assert.equal(manifest.version, "1.1.11");
 assert.deepEqual(manifest.optional_permissions, ["clipboardWrite"]);
 assert.deepEqual(
   [...manifest.permissions].sort(),
@@ -139,6 +139,8 @@ assert.match(contentSource, /captureRect: getCaptureRect\(\)/);
 assert.match(contentSource, /HOLD_STILL_COPY_IMAGE/);
 assert.match(contentSource, /navigator\.clipboard\.write/);
 assert.match(contentSource, /range\.selectNode\(image\)/);
+assert.match(contentSource, /"right:20px"/);
+assert.match(contentSource, /"bottom:20px"/);
 assert.match(contentSource, /document\.execCommand\("copy"\)/);
 
 let offscreenMessageListener;

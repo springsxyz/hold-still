@@ -541,7 +541,7 @@
       "all:initial",
       "position:fixed",
       "right:20px",
-      "top:20px",
+      "bottom:20px",
       "z-index:2147483647",
       "pointer-events:none"
     ].join(";");
