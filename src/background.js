@@ -106,6 +106,7 @@ async function runMode(tabId, mode) {
 
 async function captureViewport(tabId, output) {
   const tab = await chrome.tabs.get(tabId);
+  await ensureContentScript(tabId);
   const dataUrl = await captureVisible(tab.windowId);
   await deliverImage(
     dataUrl,
@@ -113,6 +114,12 @@ async function captureViewport(tabId, output) {
     output,
     false,
     tabId
+  );
+
+  notifyTab(
+    tabId,
+    completionMessage(output, "Current viewport"),
+    "success"
   );
 }
 

@@ -8,7 +8,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "u
 
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.name, "Hold Still");
-assert.equal(manifest.version, "1.1.11");
+assert.equal(manifest.version, "1.1.12");
 assert.deepEqual(manifest.optional_permissions, ["clipboardWrite"]);
 assert.deepEqual(
   [...manifest.permissions].sort(),
@@ -248,6 +248,13 @@ const backgroundSource = fs.readFileSync(
   path.join(root, "src/background.js"),
   "utf8"
 );
+const viewportCaptureSource = backgroundSource.slice(
+  backgroundSource.indexOf("async function captureViewport"),
+  backgroundSource.indexOf("async function captureSelectedArea")
+);
+assert.match(viewportCaptureSource, /await ensureContentScript\(tabId\)/);
+assert.match(viewportCaptureSource, /completionMessage\(output, "Current viewport"\)/);
+assert.match(viewportCaptureSource, /notifyTab\(/);
 assert.match(backgroundSource, /reasons: \["BLOBS", "CLIPBOARD"\]/);
 assert.match(backgroundSource, /action: "copy"/);
 assert.doesNotMatch(backgroundSource, /chrome\.windows\.create/);
