@@ -118,6 +118,17 @@ for (const relativePath of shippedSources) {
 const listeners = {};
 const badgeWrites = [];
 const storageBacking = {};
+const downloadCalls = [];
+
+// Swappable so individual cases can make a page refuse injection or capture.
+const tabsStub = {
+  sendMessage: () => Promise.resolve({ ok: true }),
+  get: (tabId) => Promise.resolve({ id: tabId, windowId: 1, title: "Example Page" }),
+  captureVisibleTab: () => Promise.resolve("data:image/png;base64,iVBORw0KGgo=")
+};
+const scriptingStub = {
+  executeScript: () => Promise.resolve([])
+};
 
 const sandbox = {
   chrome: {
@@ -173,9 +184,12 @@ const sandbox = {
           listeners.tabUpdated = listener;
         }
       },
-      sendMessage() {
-        return Promise.resolve({ ok: true });
-      }
+      sendMessage: (...args) => tabsStub.sendMessage(...args),
+      get: (...args) => tabsStub.get(...args),
+      captureVisibleTab: (...args) => tabsStub.captureVisibleTab(...args)
+    },
+    scripting: {
+      executeScript: (...args) => scriptingStub.executeScript(...args)
     },
     action: {
       setBadgeText(details) {
@@ -187,6 +201,10 @@ const sandbox = {
       }
     },
     downloads: {
+      download(options) {
+        downloadCalls.push(options);
+        return Promise.resolve(downloadCalls.length);
+      },
       onChanged: { addListener() {}, removeListener() {} }
     }
   },
@@ -336,6 +354,49 @@ async function settingsMigration() {
   delete storageBacking.settingsVersion;
 }
 
+async function viewportCaptureOnUninjectablePage() {
+  // Regression: an earlier build made the confirmation toast a prerequisite for
+  // the capture, which stopped viewport captures working on every page that
+  // blocks injection but still allows captureVisibleTab -- the Chrome Web Store
+  // among them. The toast is the expendable half, not the screenshot.
+  const restoreSendMessage = tabsStub.sendMessage;
+  const restoreExecuteScript = scriptingStub.executeScript;
+  tabsStub.sendMessage = () =>
+    Promise.reject(new Error("Could not establish connection."));
+  scriptingStub.executeScript = () =>
+    Promise.reject(new Error("Cannot access contents of the page."));
+
+  try {
+    const delivered = await sandbox.captureViewport(11, "download");
+    assert.equal(delivered, "download", "a refused injection must not cost the capture");
+    assert.equal(downloadCalls.length, 1, "the screenshot still reaches Downloads");
+    assert.ok(downloadCalls[0].filename.endsWith(".png"));
+  } finally {
+    tabsStub.sendMessage = restoreSendMessage;
+    scriptingStub.executeScript = restoreExecuteScript;
+    downloadCalls.length = 0;
+  }
+}
+
+async function restrictedPageKeepsItsExplanation() {
+  // A page that blocks the capture itself should still say why in plain words
+  // rather than passing Chrome's raw wording through.
+  const restoreCapture = tabsStub.captureVisibleTab;
+  tabsStub.captureVisibleTab = () =>
+    Promise.reject(new Error('Cannot access contents of url "chrome://settings/".'));
+
+  try {
+    await assert.rejects(
+      sandbox.captureViewport(12, "download"),
+      /browser settings and store pages block extensions/
+    );
+    assert.equal(downloadCalls.length, 0);
+  } finally {
+    tabsStub.captureVisibleTab = restoreCapture;
+    downloadCalls.length = 0;
+  }
+}
+
 /* ---------------------------------------------------------- background shape */
 
 // The canvas guard belongs to the offscreen document, the only context that
@@ -383,7 +444,11 @@ const viewportCaptureSource = backgroundSource.slice(
   backgroundSource.indexOf("async function captureViewport"),
   backgroundSource.indexOf("async function captureSelectedArea")
 );
-assert.ok(viewportCaptureSource.includes("await ensureContentScript(tabId)"));
+assert.ok(
+  !viewportCaptureSource.includes("await ensureContentScript(tabId)"),
+  "a viewport capture must not hard-require an injectable page"
+);
+assert.ok(viewportCaptureSource.includes("tryEnsureContentScript"));
 assert.ok(viewportCaptureSource.includes('completionMessage(delivered, "Current viewport")'));
 assert.ok(viewportCaptureSource.includes("notifyTab("));
 
@@ -547,6 +612,8 @@ assert.equal(
 selectionLifecycle()
   .then(outputDefaults)
   .then(settingsMigration)
+  .then(viewportCaptureOnUninjectablePage)
+  .then(restrictedPageKeepsItsExplanation)
   .then(() => {
     console.log("Hold Still smoke tests passed.");
   })

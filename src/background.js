@@ -21,6 +21,9 @@ const CAPTURE_INTERVAL_MS = 560;
 const CAPTURE_QUOTA_PATTERN = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i;
 const SETTINGS_VERSION = 2;
 const RESERVED_FILENAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const RESTRICTED_PAGE_PATTERN = /cannot access|chrome:\/\/|extension manifest/i;
+const RESTRICTED_PAGE_MESSAGE =
+  "This page cannot be captured. Try a normal website tab; browser settings and store pages block extensions.";
 let creatingOffscreenDocument = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -141,21 +144,29 @@ async function runMode(tabId, mode) {
 
 async function captureViewport(tabId, output) {
   const tab = await chrome.tabs.get(tabId);
-  await ensureContentScript(tabId);
+
+  // The toast needs a content script; the capture itself does not. Pages that
+  // block injection but allow captureVisibleTab, the Chrome Web Store among
+  // them, must still be capturable, so a refused injection costs the
+  // confirmation rather than the screenshot.
+  const canNotify = await tryEnsureContentScript(tabId);
+
   const dataUrl = await captureVisible(tab.windowId);
   const delivered = await deliverImage(
     dataUrl,
     makeFilename(tab, "viewport"),
     output,
     false,
-    tabId
+    canNotify ? tabId : null
   );
 
-  notifyTab(
-    tabId,
-    completionMessage(delivered, "Current viewport"),
-    "success"
-  );
+  if (canNotify) {
+    notifyTab(
+      tabId,
+      completionMessage(delivered, "Current viewport"),
+      "success"
+    );
+  }
   return delivered;
 }
 
@@ -325,9 +336,17 @@ async function ensureContentScript(tabId) {
     });
     await chrome.tabs.sendMessage(tabId, { type: MESSAGE.ping });
   } catch {
-    throw new Error(
-      "This page cannot be captured. Try a normal website tab; browser settings and store pages block extensions."
-    );
+    throw new Error(RESTRICTED_PAGE_MESSAGE);
+  }
+}
+
+// For work that only wants the content script if it happens to be reachable.
+async function tryEnsureContentScript(tabId) {
+  try {
+    await ensureContentScript(tabId);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -338,7 +357,7 @@ async function captureVisible(windowId) {
     // Chromium caps captureVisibleTab at two calls a second. Drifting past the
     // cap should cost one extra wait, not the whole multi-tile capture.
     if (!CAPTURE_QUOTA_PATTERN.test(friendlyError(error))) {
-      throw new Error("Chrome could not capture this tab: " + friendlyError(error));
+      throw new Error(captureFailureMessage(error));
     }
   }
 
@@ -347,7 +366,7 @@ async function captureVisible(windowId) {
   try {
     return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
   } catch (error) {
-    throw new Error("Chrome could not capture this tab: " + friendlyError(error));
+    throw new Error(captureFailureMessage(error));
   }
 }
 
@@ -634,6 +653,14 @@ async function setBadge(tabId, text, color) {
 
 function clearBadge(tabId) {
   chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
+}
+
+// A page that blocks capture outright, such as chrome://settings, deserves the
+// same explanation the injection path gives rather than Chrome's raw wording.
+function captureFailureMessage(error) {
+  const detail = friendlyError(error);
+  if (RESTRICTED_PAGE_PATTERN.test(detail)) return RESTRICTED_PAGE_MESSAGE;
+  return "Chrome could not capture this tab: " + detail;
 }
 
 function friendlyError(error) {
