@@ -11,10 +11,19 @@ const MESSAGE = {
   scrollTo: "HOLD_STILL_SCROLL_TO",
   hideFixed: "HOLD_STILL_HIDE_FIXED",
   restorePage: "HOLD_STILL_RESTORE_PAGE",
-  toast: "HOLD_STILL_TOAST"
+  toast: "HOLD_STILL_TOAST",
+  cropperReady: "HOLD_STILL_CROPPER_READY",
+  cropperResult: "HOLD_STILL_CROPPER_RESULT",
+  cropperCancelled: "HOLD_STILL_CROPPER_CANCELLED"
 };
 
+// Crops waiting on the standalone selection window, keyed by request id.
+const pendingCrops = new Map();
+
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
+const CROPPER_PATH = "cropper/cropper.html";
+const CROPPER_WINDOW_WIDTH = 1000;
+const CROPPER_WINDOW_HEIGHT = 760;
 const OFFSCREEN_TARGET = "hold-still-offscreen";
 const POPUP_CLIPBOARD_MESSAGE = "HOLD_STILL_POPUP_COPY";
 const CAPTURE_INTERVAL_MS = 560;
@@ -51,8 +60,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     clearBadge(sender.tab.id);
   }
 
+  if (message?.type === MESSAGE.cropperReady && message.requestId) {
+    const pending = pendingCrops.get(message.requestId);
+    sendResponse(
+      pending
+        ? { ok: true, dataUrl: pending.dataUrl }
+        : { ok: false, error: "This selection request expired." }
+    );
+    return false;
+  }
+
+  if (message?.type === MESSAGE.cropperResult && message.requestId) {
+    const pending = pendingCrops.get(message.requestId);
+    if (!pending) {
+      sendResponse({ ok: false, error: "This selection request expired." });
+      return false;
+    }
+    pendingCrops.delete(message.requestId);
+
+    // The window stays open until this resolves, which keeps a focused
+    // extension page available for the clipboard while the crop is delivered.
+    finishCrop(pending, message.selection)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => {
+        reportFailure(pending.tabId, error);
+        sendResponse({ ok: false, error: friendlyError(error) });
+      });
+    return true;
+  }
+
+  if (message?.type === MESSAGE.cropperCancelled && message.requestId) {
+    discardCrop(message.requestId);
+    sendResponse({ ok: true });
+    return false;
+  }
+
   return false;
 });
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  for (const [requestId, pending] of pendingCrops) {
+    if (pending.windowId === windowId) discardCrop(requestId);
+  }
+});
+
+function discardCrop(requestId) {
+  const pending = pendingCrops.get(requestId);
+  if (!pending) return;
+  pendingCrops.delete(requestId);
+  pendingSelections.delete(pending.tabId);
+  clearBadge(pending.tabId);
+}
 
 chrome.commands.onCommand.addListener(async (command) => {
   const modeByCommand = {
@@ -111,10 +169,17 @@ async function runMode(tabId, mode) {
   if (mode === "selection") {
     pendingSelections.add(tabId);
     try {
-      await ensureContentScript(tabId);
-      await chrome.tabs.sendMessage(tabId, { type: MESSAGE.beginSelection });
+      if (await tryEnsureContentScript(tabId)) {
+        await chrome.tabs.sendMessage(tabId, { type: MESSAGE.beginSelection });
+        await setBadge(tabId, "SEL", "#2563eb");
+        return { message: "Draw a box over the area you want to capture." };
+      }
+
+      // Chrome will not let an overlay into store or browser pages, so crop the
+      // captured viewport in a window of our own instead of refusing outright.
+      await openCropper(tabId);
       await setBadge(tabId, "SEL", "#2563eb");
-      return { message: "Draw a box over the area you want to capture." };
+      return { message: "Drag on the capture to select an area." };
     } catch (error) {
       pendingSelections.delete(tabId);
       throw error;
@@ -172,6 +237,60 @@ async function captureViewport(tabId, output) {
   );
 
   return { delivered, notified };
+}
+
+async function openCropper(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  const dataUrl = await captureVisible(tab.windowId);
+  const requestId = crypto.randomUUID();
+
+  const created = await chrome.windows.create({
+    url: chrome.runtime.getURL(CROPPER_PATH) + "?request=" + requestId,
+    type: "popup",
+    width: CROPPER_WINDOW_WIDTH,
+    height: CROPPER_WINDOW_HEIGHT
+  });
+
+  pendingCrops.set(requestId, { tabId, dataUrl, windowId: created.id });
+}
+
+// Same delivery as an in-page selection, but the rectangle arrives from the
+// standalone window and the source page cannot be reached for a toast.
+async function finishCrop(pending, selection) {
+  const { tabId, dataUrl } = pending;
+  pendingSelections.delete(tabId);
+
+  activeJobs.add(tabId);
+  await setBadge(tabId, "...", "#2563eb");
+
+  try {
+    validateSelection(selection);
+    const output = await getOutputMode();
+    const tab = await chrome.tabs.get(tabId);
+    const result = await sendOffscreen({
+      action: "crop",
+      dataUrl,
+      selection,
+      asDataUrl: output === "copy"
+    });
+
+    const delivered = await deliverImage(
+      result.url,
+      makeFilename(tab, "selection"),
+      output,
+      output !== "copy",
+      null
+    );
+
+    const notified = await announce(
+      null,
+      completionMessage(delivered, "Selected area"),
+      "success"
+    );
+    await signalSuccess(tabId, notified);
+  } finally {
+    activeJobs.delete(tabId);
+  }
 }
 
 async function captureSelectedArea(tabId, selection) {

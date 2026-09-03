@@ -6,7 +6,7 @@ Hold Still is a dependency-free Chrome and Edge extension that captures screensh
 
 - Full page detects either document scrolling or a large app-style scroll panel, stitches its visible tiles, restores the original position, and produces one PNG.
 - Current viewport captures exactly what is visible in the active tab.
-- Selected area adds a drag-to-select overlay, crops the visible tab to that rectangle, and produces the result.
+- Selected area adds a drag-to-select overlay, crops the visible tab to that rectangle, and produces the result. On pages that refuse an overlay it falls back to dragging the selection on the captured image in a separate window.
 
 Choose the output in the popup. Copy is the default:
 
@@ -43,7 +43,10 @@ Chrome shortcuts can be changed at chrome://extensions/shortcuts.
 
 ## Notes
 
-- Browsers block extensions from running any code inside internal pages such as chrome://settings and inside the Chrome Web Store. Current viewport still works there, because it reads pixels from outside the page, and the confirmation arrives as a system notification instead of an in-page toast. Full page and Selected area cannot work there: one has to scroll and measure the page, the other has to draw a selection overlay in it, and both require running code inside the page. No permission lifts that restriction.
+- Browsers block extensions from running any code inside internal pages such as chrome://settings and inside the Chrome Web Store. Hold Still works around this where it can, and no permission lifts the restriction itself.
+  - Current viewport works, because it reads pixels from outside the page. The confirmation arrives as a system notification instead of an in-page toast.
+  - Selected area works. The drag overlay cannot be drawn on the page, so Hold Still captures the viewport and opens a window where the selection is dragged on the capture instead.
+  - Full page cannot work. Stitching means scrolling the document and measuring its height, and there is no way to do that from outside a page the browser has closed to extensions.
 - Extremely large pages can exceed Chromium's maximum canvas size. Hold Still shows an error and recommends selected-area captures in that case.
 - Animated or lazy-loaded content can change while a full-page capture is scrolling. Fixed and sticky elements are suppressed after the first tile, and the page is restored afterward.
 

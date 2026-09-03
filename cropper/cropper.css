@@ -1,0 +1,104 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  color: #17130f;
+  background: #f8f5ef;
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 16px;
+  border-bottom: 1px solid #e7ded2;
+  background: #fffdfa;
+}
+
+.bar p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bar p[data-tone="error"] {
+  color: #b91c1c;
+}
+
+.bar button {
+  padding: 7px 13px;
+  border: 1px solid #ded3c5;
+  border-radius: 7px;
+  color: #4a403a;
+  background: #ffffff;
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+}
+
+.bar button:hover {
+  background: #f4efe7;
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: #2a2521;
+}
+
+.frame {
+  position: relative;
+  line-height: 0;
+  cursor: crosshair;
+  user-select: none;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* Width and height are set in JS from the measured stage, so the element box
+   matches the rendered pixels exactly and drag coordinates map straight onto
+   the capture without any object-fit guesswork. */
+#shot {
+  display: block;
+}
+
+.selection {
+  position: absolute;
+  display: none;
+  border: 2px solid #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.8),
+    0 0 0 9999px rgba(2, 6, 23, 0.55);
+  pointer-events: none;
+}
+
+.size {
+  position: absolute;
+  left: 0;
+  top: -30px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #0f172a;
+  font: 600 11px/1.2 inherit;
+  white-space: nowrap;
+}
