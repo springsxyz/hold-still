@@ -13,8 +13,7 @@ const shippedSources = [
   "src/background.js",
   "src/content.js",
   "popup/popup.js",
-  "offscreen/offscreen.js",
-  "cropper/cropper.js"
+  "offscreen/offscreen.js"
 ];
 
 const backgroundSource = read("src/background.js");
@@ -76,8 +75,6 @@ const referencedFiles = [
   manifest.background.service_worker,
   manifest.action.default_popup,
   "offscreen/offscreen.html",
-  "cropper/cropper.html",
-  "cropper/cropper.css",
   ...Object.values(manifest.icons),
   ...Object.values(manifest.action.default_icon)
 ];
@@ -124,7 +121,6 @@ const badgeWrites = [];
 const storageBacking = {};
 const downloadCalls = [];
 const notificationCalls = [];
-const windowCreateCalls = [];
 
 // Swappable so individual cases can make a page refuse injection or capture.
 const tabsStub = {
@@ -201,17 +197,6 @@ const sandbox = {
       create(options) {
         notificationCalls.push(options);
         return Promise.resolve("notification-id");
-      }
-    },
-    windows: {
-      onRemoved: {
-        addListener(listener) {
-          listeners.windowRemoved = listener;
-        }
-      },
-      create(options) {
-        windowCreateCalls.push(options);
-        return Promise.resolve({ id: 99 });
       }
     },
     action: {
@@ -426,41 +411,6 @@ async function viewportCaptureOnUninjectablePage() {
   }
 }
 
-async function selectionFallsBackToCropperWindow() {
-  // Chrome refuses an overlay on store and browser pages, so selection moves to
-  // a window of our own rather than refusing the capture outright.
-  const restoreSendMessage = tabsStub.sendMessage;
-  const restoreExecuteScript = scriptingStub.executeScript;
-  tabsStub.sendMessage = () =>
-    Promise.reject(new Error("Could not establish connection."));
-  scriptingStub.executeScript = () =>
-    Promise.reject(new Error("Cannot access contents of the page."));
-  windowCreateCalls.length = 0;
-
-  try {
-    const opened = await sandbox.runMode(31, "selection");
-    assert.match(opened.message, /Drag on the capture/);
-    assert.equal(windowCreateCalls.length, 1, "a selection window opens");
-    assert.ok(windowCreateCalls[0].url.includes("cropper/cropper.html?request="));
-    assert.equal(windowCreateCalls[0].type, "popup");
-
-    // Closing that window has to release the tab, the way cancelling an
-    // in-page overlay does, or the tab stays marked busy forever.
-    listeners.windowRemoved(99);
-    const reopened = await sandbox.runMode(31, "selection");
-    assert.match(
-      reopened.message,
-      /Drag on the capture/,
-      "closing the selection window releases the tab"
-    );
-    listeners.windowRemoved(99);
-  } finally {
-    tabsStub.sendMessage = restoreSendMessage;
-    scriptingStub.executeScript = restoreExecuteScript;
-    windowCreateCalls.length = 0;
-  }
-}
-
 async function reachablePagePrefersItsOwnToast() {
   // The in-page toast sits next to what was captured, so it wins whenever the
   // page will take it. The system notification is a fallback, not a duplicate.
@@ -536,10 +486,7 @@ assert.ok(
   backgroundSource.includes("single offscreen document"),
   "losing the offscreen creation race must not fail the capture"
 );
-// The window-based clipboard flow is gone; windows.create now exists only to
-// offer selection on pages that refuse an in-page overlay.
-assert.ok(!backgroundSource.includes("HOLD_STILL_CLIPBOARD_READY"));
-assert.ok(backgroundSource.includes("async function openCropper"));
+assert.ok(!backgroundSource.includes("chrome.windows.create"));
 assert.ok(backgroundSource.includes('reasons: ["BLOBS", "CLIPBOARD"]'));
 
 const viewportCaptureSource = backgroundSource.slice(
@@ -726,7 +673,6 @@ selectionLifecycle()
   .then(outputDefaults)
   .then(settingsMigration)
   .then(viewportCaptureOnUninjectablePage)
-  .then(selectionFallsBackToCropperWindow)
   .then(reachablePagePrefersItsOwnToast)
   .then(restrictedPageKeepsItsExplanation)
   .then(() => {

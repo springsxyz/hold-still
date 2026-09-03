@@ -12,7 +12,7 @@ $distDirectory = Join-Path $projectRoot "dist"
 $stagingDirectory = Join-Path $distDirectory "staging"
 $archivePath = Join-Path $distDirectory ("hold-still-" + $manifest.version + ".zip")
 
-$shippedPaths = @("manifest.json", "icons", "cropper", "offscreen", "popup", "src")
+$shippedPaths = @("manifest.json", "icons", "offscreen", "popup", "src")
 
 New-Item -ItemType Directory -Path $distDirectory -Force | Out-Null
 if (Test-Path $stagingDirectory) {
