@@ -50,7 +50,6 @@ assert.deepEqual(
     "activeTab",
     "clipboardWrite",
     "downloads",
-    "notifications",
     "offscreen",
     "scripting",
     "storage"
@@ -120,7 +119,6 @@ const listeners = {};
 const badgeWrites = [];
 const storageBacking = {};
 const downloadCalls = [];
-const notificationCalls = [];
 
 // Swappable so individual cases can make a page refuse injection or capture.
 const tabsStub = {
@@ -192,12 +190,6 @@ const sandbox = {
     },
     scripting: {
       executeScript: (...args) => scriptingStub.executeScript(...args)
-    },
-    notifications: {
-      create(options) {
-        notificationCalls.push(options);
-        return Promise.resolve("notification-id");
-      }
     },
     action: {
       setBadgeText(details) {
@@ -376,7 +368,6 @@ async function viewportCaptureOnUninjectablePage() {
 
   try {
     badgeWrites.length = 0;
-    notificationCalls.length = 0;
 
     const result = await sandbox.captureViewport(11, "download");
     assert.equal(
@@ -387,16 +378,9 @@ async function viewportCaptureOnUninjectablePage() {
     assert.equal(downloadCalls.length, 1, "the screenshot still reaches Downloads");
     assert.ok(downloadCalls[0].filename.endsWith(".png"));
 
-    // The confirmation has to survive too: no toast can be drawn on a page that
-    // refuses injection, so it arrives as a system notification instead.
-    assert.equal(
-      result.notified,
-      true,
-      "the user is still told the capture happened"
-    );
-    assert.equal(notificationCalls.length, 1, "delivered as a system notification");
-    assert.match(notificationCalls[0].message, /saved to Downloads/);
-    assert.ok(notificationCalls[0].iconUrl.endsWith("icons/icon128.png"));
+    // No toast can be drawn on a page that refuses injection, so the badge is
+    // the whole confirmation and has to hold longer to stand in for it.
+    assert.equal(result.notified, false, "the page took no toast");
 
     await sandbox.signalSuccess(11, result.notified);
     assert.ok(
@@ -407,23 +391,12 @@ async function viewportCaptureOnUninjectablePage() {
     tabsStub.sendMessage = restoreSendMessage;
     scriptingStub.executeScript = restoreExecuteScript;
     downloadCalls.length = 0;
-    notificationCalls.length = 0;
   }
 }
 
-async function reachablePagePrefersItsOwnToast() {
-  // The in-page toast sits next to what was captured, so it wins whenever the
-  // page will take it. The system notification is a fallback, not a duplicate.
-  notificationCalls.length = 0;
-
+async function reachablePageGetsItsToast() {
   const result = await sandbox.captureViewport(13, "download");
-  assert.equal(result.notified, true);
-  assert.equal(
-    notificationCalls.length,
-    0,
-    "a page that takes the toast must not also raise a system notification"
-  );
-
+  assert.equal(result.notified, true, "an injectable page takes the in-page toast");
   downloadCalls.length = 0;
 }
 
@@ -507,10 +480,7 @@ assert.ok(
   "the terse OK badge was replaced by a clearer success mark"
 );
 assert.ok(viewportCaptureSource.includes('completionMessage(delivered, "Current viewport")'));
-assert.ok(
-  viewportCaptureSource.includes("announce("),
-  "confirmation goes through the path that falls back to a system notification"
-);
+assert.ok(viewportCaptureSource.includes("notifyTab("));
 
 /* ------------------------------------------------------------- content shape */
 
@@ -673,7 +643,7 @@ selectionLifecycle()
   .then(outputDefaults)
   .then(settingsMigration)
   .then(viewportCaptureOnUninjectablePage)
-  .then(reachablePagePrefersItsOwnToast)
+  .then(reachablePageGetsItsToast)
   .then(restrictedPageKeepsItsExplanation)
   .then(() => {
     console.log("Hold Still smoke tests passed.");

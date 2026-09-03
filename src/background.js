@@ -165,7 +165,7 @@ async function captureViewport(tabId, output) {
     pageReachable ? tabId : null
   );
 
-  const notified = await announce(
+  const notified = await notifyTab(
     pageReachable ? tabId : null,
     completionMessage(delivered, "Current viewport"),
     "success"
@@ -201,7 +201,7 @@ async function captureSelectedArea(tabId, selection) {
       tabId
     );
 
-    const notified = await announce(
+    const notified = await notifyTab(
       tabId,
       completionMessage(delivered, "Selected area"),
       "success"
@@ -293,7 +293,7 @@ async function captureFullPage(tabId, output) {
       tabId
     );
 
-    const notified = await announce(
+    const notified = await notifyTab(
       tabId,
       completionMessage(delivered, "Full-page screenshot"),
       "success"
@@ -639,43 +639,22 @@ async function reportFailure(tabId, error) {
   pendingSelections.delete(tabId);
   const message = friendlyError(error);
   await setBadge(tabId, "!", "#dc2626");
-  const notified = await announce(tabId, message, "error");
+  const notified = await notifyTab(tabId, message, "error");
   setTimeout(
     () => clearBadge(tabId),
     notified ? ERROR_BADGE_MS : SILENT_BADGE_MS
   );
 }
 
-// Every capture ends with a confirmation the user can actually see. The in-page
-// toast is preferred because it sits next to the thing they captured, but Chrome
-// forbids injecting into store and browser pages, so a system notification backs
-// it up. One of the two always lands.
-async function announce(tabId, message, tone) {
-  if (Number.isInteger(tabId) && (await notifyTab(tabId, message, tone))) {
-    return true;
-  }
-  return showSystemNotification(message, tone);
-}
-
+// Resolves to whether the page actually took the toast, which decides how long
+// the badge has to stand in for it. Chrome forbids injecting into store and
+// browser pages, so on those the badge is the entire confirmation.
 function notifyTab(tabId, message, tone) {
+  if (!Number.isInteger(tabId)) return Promise.resolve(false);
+
   return chrome.tabs
     .sendMessage(tabId, { type: MESSAGE.toast, message, tone })
     .then(() => true, () => false);
-}
-
-async function showSystemNotification(message, tone) {
-  try {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
-      title: tone === "error" ? "Hold Still could not capture" : "Hold Still",
-      message,
-      silent: true
-    });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function signalSuccess(tabId, notified) {

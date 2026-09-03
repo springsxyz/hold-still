@@ -19,10 +19,6 @@ or a selected area, and save it as a PNG file or place it on the clipboard.
   overlay. Injected on demand, never declared as a persistent content script.
 - **downloads** — Writes the finished PNG to the browser's Downloads directory.
   Used only for the file the user just captured.
-- **notifications** — Confirms a finished capture on pages where the in-page
-  toast cannot be drawn. Chrome forbids injecting into store and browser pages,
-  so without this a capture there would succeed silently. Carries the install
-  warning "Display notifications".
 - **offscreen** — Stitches tiles and crops selections on a canvas, which a
   service worker cannot do. Also holds the clipboard fallback path.
 - **storage** — Remembers one value, the Download-or-Copy output preference, in
