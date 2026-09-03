@@ -74,15 +74,27 @@ Reuse the manifest description, which fits the 132-character limit at 74:
 
 ## Screenshots
 
-The store needs at least one, at 1280x800 or 640x400. `scripts/store-screenshot.html`
-composes one from the real popup, loaded in an iframe rather than mocked up, so it
-cannot drift from the shipped UI.
+The store takes up to five, at 1280x800 or 640x400. `scripts/store-screenshot.html`
+composes three, selected with `?slide=`:
+
+1. Hero. Loads the real `popup/popup.html` in an iframe rather than mocking it,
+   so it cannot drift from the shipped UI.
+2. The three capture modes, with their keyboard shortcuts.
+3. Copy as the default output, the confirmation toast, and the privacy line.
+
+To capture them:
 
     npm run preview
 
-Open <http://localhost:5177/scripts/store-screenshot.html>, then capture at exactly
-1280x800: DevTools, Ctrl+Shift+M for the device toolbar, set 1280x800, and use
-"Capture screenshot" from the toolbar's overflow menu.
+Then, for each of `?slide=1`, `?slide=2` and `?slide=3`:
+
+1. Open <http://localhost:5177/scripts/store-screenshot.html?slide=1>.
+2. Open DevTools (F12) and turn on the device toolbar (Ctrl+Shift+M).
+3. Set the dimensions to exactly 1280 x 800.
+4. From the device toolbar's overflow menu, choose "Capture screenshot".
+
+Each save is a 1280x800 PNG ready to upload. Upload them in order: the first is
+the one shown on the listing card.
 
 ## Privacy policy
 
