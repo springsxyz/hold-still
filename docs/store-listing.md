@@ -98,8 +98,19 @@ the one shown on the listing card.
 
 ## Privacy policy
 
-The dashboard asks for a URL, so this needs hosting somewhere public — a GitHub
-Pages page or a gist is enough. Draft:
+Written and ready to deploy at `site/privacy.html`, styled to match the landing
+page in `site/index.html`. Both are static, so any host works — Vercel, GitHub
+Pages, Netlify. Point the dashboard's privacy policy field at the deployed
+`/privacy.html`.
+
+Two placeholders to fill before deploying:
+
+- The "Add to Chrome" link in `site/index.html`, once the listing exists and the
+  extension has an id.
+- The `support@holdstill.dev` address on both pages, if that is not the address
+  you want.
+
+The text, for reference:
 
 > **Hold Still privacy policy**
 >
