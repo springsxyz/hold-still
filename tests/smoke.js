@@ -50,6 +50,7 @@ assert.deepEqual(
     "activeTab",
     "clipboardWrite",
     "downloads",
+    "notifications",
     "offscreen",
     "scripting",
     "storage"
@@ -119,6 +120,7 @@ const listeners = {};
 const badgeWrites = [];
 const storageBacking = {};
 const downloadCalls = [];
+const notificationCalls = [];
 
 // Swappable so individual cases can make a page refuse injection or capture.
 const tabsStub = {
@@ -190,6 +192,12 @@ const sandbox = {
     },
     scripting: {
       executeScript: (...args) => scriptingStub.executeScript(...args)
+    },
+    notifications: {
+      create(options) {
+        notificationCalls.push(options);
+        return Promise.resolve("notification-id");
+      }
     },
     action: {
       setBadgeText(details) {
@@ -367,15 +375,56 @@ async function viewportCaptureOnUninjectablePage() {
     Promise.reject(new Error("Cannot access contents of the page."));
 
   try {
-    const delivered = await sandbox.captureViewport(11, "download");
-    assert.equal(delivered, "download", "a refused injection must not cost the capture");
+    badgeWrites.length = 0;
+    notificationCalls.length = 0;
+
+    const result = await sandbox.captureViewport(11, "download");
+    assert.equal(
+      result.delivered,
+      "download",
+      "a refused injection must not cost the capture"
+    );
     assert.equal(downloadCalls.length, 1, "the screenshot still reaches Downloads");
     assert.ok(downloadCalls[0].filename.endsWith(".png"));
+
+    // The confirmation has to survive too: no toast can be drawn on a page that
+    // refuses injection, so it arrives as a system notification instead.
+    assert.equal(
+      result.notified,
+      true,
+      "the user is still told the capture happened"
+    );
+    assert.equal(notificationCalls.length, 1, "delivered as a system notification");
+    assert.match(notificationCalls[0].message, /saved to Downloads/);
+    assert.ok(notificationCalls[0].iconUrl.endsWith("icons/icon128.png"));
+
+    await sandbox.signalSuccess(11, result.notified);
+    assert.ok(
+      badgeWrites.some((write) => write.text === "✓"),
+      "success is marked on the badge, which works on every page"
+    );
   } finally {
     tabsStub.sendMessage = restoreSendMessage;
     scriptingStub.executeScript = restoreExecuteScript;
     downloadCalls.length = 0;
+    notificationCalls.length = 0;
   }
+}
+
+async function reachablePagePrefersItsOwnToast() {
+  // The in-page toast sits next to what was captured, so it wins whenever the
+  // page will take it. The system notification is a fallback, not a duplicate.
+  notificationCalls.length = 0;
+
+  const result = await sandbox.captureViewport(13, "download");
+  assert.equal(result.notified, true);
+  assert.equal(
+    notificationCalls.length,
+    0,
+    "a page that takes the toast must not also raise a system notification"
+  );
+
+  downloadCalls.length = 0;
 }
 
 async function restrictedPageKeepsItsExplanation() {
@@ -449,8 +498,19 @@ assert.ok(
   "a viewport capture must not hard-require an injectable page"
 );
 assert.ok(viewportCaptureSource.includes("tryEnsureContentScript"));
+
+// The badge stands in for the toast on pages that refuse injection, so it has
+// to hold noticeably longer there.
+assert.ok(backgroundSource.includes("SILENT_BADGE_MS"));
+assert.ok(
+  !backgroundSource.includes('setBadge(tabId, "OK"'),
+  "the terse OK badge was replaced by a clearer success mark"
+);
 assert.ok(viewportCaptureSource.includes('completionMessage(delivered, "Current viewport")'));
-assert.ok(viewportCaptureSource.includes("notifyTab("));
+assert.ok(
+  viewportCaptureSource.includes("announce("),
+  "confirmation goes through the path that falls back to a system notification"
+);
 
 /* ------------------------------------------------------------- content shape */
 
@@ -613,6 +673,7 @@ selectionLifecycle()
   .then(outputDefaults)
   .then(settingsMigration)
   .then(viewportCaptureOnUninjectablePage)
+  .then(reachablePagePrefersItsOwnToast)
   .then(restrictedPageKeepsItsExplanation)
   .then(() => {
     console.log("Hold Still smoke tests passed.");

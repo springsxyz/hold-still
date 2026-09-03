@@ -43,7 +43,7 @@ Chrome shortcuts can be changed at chrome://extensions/shortcuts.
 
 ## Notes
 
-- Browsers block extensions on internal pages such as chrome://settings and on the Chrome Web Store.
+- Browsers block extensions from running any code inside internal pages such as chrome://settings and inside the Chrome Web Store. Current viewport still works there, because it reads pixels from outside the page, and the confirmation arrives as a system notification instead of an in-page toast. Full page and Selected area cannot work there: one has to scroll and measure the page, the other has to draw a selection overlay in it, and both require running code inside the page. No permission lifts that restriction.
 - Extremely large pages can exceed Chromium's maximum canvas size. Hold Still shows an error and recommends selected-area captures in that case.
 - Animated or lazy-loaded content can change while a full-page capture is scrolling. Fixed and sticky elements are suppressed after the first tile, and the page is restored afterward.
 

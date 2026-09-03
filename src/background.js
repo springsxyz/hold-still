@@ -20,6 +20,12 @@ const POPUP_CLIPBOARD_MESSAGE = "HOLD_STILL_POPUP_COPY";
 const CAPTURE_INTERVAL_MS = 560;
 const CAPTURE_QUOTA_PATTERN = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i;
 const SETTINGS_VERSION = 2;
+const SUCCESS_BADGE_MS = 1800;
+const ERROR_BADGE_MS = 3500;
+// Chrome forbids injecting into store and browser pages, so no toast can be
+// drawn there and the badge becomes the only thing the user sees, for successes
+// and failures alike. It has to linger long enough to actually be noticed.
+const SILENT_BADGE_MS = 6000;
 const RESERVED_FILENAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const RESTRICTED_PAGE_PATTERN = /cannot access|chrome:\/\/|extension manifest/i;
 const RESTRICTED_PAGE_MESSAGE =
@@ -120,22 +126,21 @@ async function runMode(tabId, mode) {
 
   try {
     const output = await getOutputMode();
-    let delivered;
+    let result;
 
     if (mode === "viewport") {
-      delivered = await captureViewport(tabId, output);
+      result = await captureViewport(tabId, output);
     } else if (mode === "full-page") {
-      delivered = await captureFullPage(tabId, output);
+      result = await captureFullPage(tabId, output);
     } else {
       throw new Error("Unknown capture mode.");
     }
 
-    await setBadge(tabId, "OK", "#16a34a");
-    setTimeout(() => clearBadge(tabId), 1800);
-    return { message: completionMessage(delivered) };
+    await signalSuccess(tabId, result.notified);
+    return { message: completionMessage(result.delivered) };
   } catch (error) {
     await setBadge(tabId, "!", "#dc2626");
-    setTimeout(() => clearBadge(tabId), 3500);
+    setTimeout(() => clearBadge(tabId), ERROR_BADGE_MS);
     throw error;
   } finally {
     activeJobs.delete(tabId);
@@ -145,11 +150,11 @@ async function runMode(tabId, mode) {
 async function captureViewport(tabId, output) {
   const tab = await chrome.tabs.get(tabId);
 
-  // The toast needs a content script; the capture itself does not. Pages that
-  // block injection but allow captureVisibleTab, the Chrome Web Store among
-  // them, must still be capturable, so a refused injection costs the
-  // confirmation rather than the screenshot.
-  const canNotify = await tryEnsureContentScript(tabId);
+  // The capture itself needs no content script. Pages that block injection but
+  // allow captureVisibleTab, the Chrome Web Store among them, must still be
+  // capturable, so a refused injection costs the in-page toast and the page
+  // clipboard route, never the screenshot.
+  const pageReachable = await tryEnsureContentScript(tabId);
 
   const dataUrl = await captureVisible(tab.windowId);
   const delivered = await deliverImage(
@@ -157,17 +162,16 @@ async function captureViewport(tabId, output) {
     makeFilename(tab, "viewport"),
     output,
     false,
-    canNotify ? tabId : null
+    pageReachable ? tabId : null
   );
 
-  if (canNotify) {
-    notifyTab(
-      tabId,
-      completionMessage(delivered, "Current viewport"),
-      "success"
-    );
-  }
-  return delivered;
+  const notified = await announce(
+    pageReachable ? tabId : null,
+    completionMessage(delivered, "Current viewport"),
+    "success"
+  );
+
+  return { delivered, notified };
 }
 
 async function captureSelectedArea(tabId, selection) {
@@ -197,13 +201,12 @@ async function captureSelectedArea(tabId, selection) {
       tabId
     );
 
-    await setBadge(tabId, "OK", "#16a34a");
-    notifyTab(
+    const notified = await announce(
       tabId,
       completionMessage(delivered, "Selected area"),
       "success"
     );
-    setTimeout(() => clearBadge(tabId), 1800);
+    await signalSuccess(tabId, notified);
   } catch (error) {
     await reportFailure(tabId, error);
   } finally {
@@ -290,12 +293,12 @@ async function captureFullPage(tabId, output) {
       tabId
     );
 
-    notifyTab(
+    const notified = await announce(
       tabId,
       completionMessage(delivered, "Full-page screenshot"),
       "success"
     );
-    return delivered;
+    return { delivered, notified };
   } finally {
     if (stitchStarted && !stitchFinished) {
       sendOffscreen({
@@ -636,12 +639,51 @@ async function reportFailure(tabId, error) {
   pendingSelections.delete(tabId);
   const message = friendlyError(error);
   await setBadge(tabId, "!", "#dc2626");
-  notifyTab(tabId, message, "error");
-  setTimeout(() => clearBadge(tabId), 3500);
+  const notified = await announce(tabId, message, "error");
+  setTimeout(
+    () => clearBadge(tabId),
+    notified ? ERROR_BADGE_MS : SILENT_BADGE_MS
+  );
+}
+
+// Every capture ends with a confirmation the user can actually see. The in-page
+// toast is preferred because it sits next to the thing they captured, but Chrome
+// forbids injecting into store and browser pages, so a system notification backs
+// it up. One of the two always lands.
+async function announce(tabId, message, tone) {
+  if (Number.isInteger(tabId) && (await notifyTab(tabId, message, tone))) {
+    return true;
+  }
+  return showSystemNotification(message, tone);
 }
 
 function notifyTab(tabId, message, tone) {
-  chrome.tabs.sendMessage(tabId, { type: MESSAGE.toast, message, tone }).catch(() => {});
+  return chrome.tabs
+    .sendMessage(tabId, { type: MESSAGE.toast, message, tone })
+    .then(() => true, () => false);
+}
+
+async function showSystemNotification(message, tone) {
+  try {
+    await chrome.notifications.create({
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+      title: tone === "error" ? "Hold Still could not capture" : "Hold Still",
+      message,
+      silent: true
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function signalSuccess(tabId, notified) {
+  await setBadge(tabId, "✓", "#16a34a");
+  setTimeout(
+    () => clearBadge(tabId),
+    notified ? SUCCESS_BADGE_MS : SILENT_BADGE_MS
+  );
 }
 
 async function setBadge(tabId, text, color) {
