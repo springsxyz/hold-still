@@ -1,9 +1,11 @@
 {
   "name": "hold-still-extension",
-  "version": "1.1.12",
+  "version": "1.2.0",
   "private": true,
   "description": "Local-first full-page, viewport, and selected-area screenshot extension.",
   "scripts": {
-    "test": "node tests/smoke.js"
+    "test": "node tests/smoke.js",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "preview": "node scripts/preview-server.js"
   }
 }

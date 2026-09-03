@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Hold Still clipboard harness</title>
+    <style>
+      body { margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif; background: #f8f5ef; color: #17130f; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p.lede { margin: 0 0 20px; color: #75695f; }
+      .row { display: flex; gap: 10px; align-items: baseline; padding: 10px 12px; border-radius: 8px; background: #fff; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(55,40,28,.10); }
+      .label { min-width: 210px; font-weight: 700; }
+      .pass { color: #15803d; font-weight: 700; }
+      .fail { color: #b91c1c; font-weight: 700; }
+      .info { color: #75695f; }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+    </style>
+  </head>
+  <body>
+    <h1>Offscreen clipboard technique</h1>
+    <p class="lede">
+      Runs the real copyImageToClipboard from offscreen/offscreen.js against a
+      generated PNG. This document is focused, so it tests the DOM technique
+      only, not the unfocused-offscreen condition.
+    </p>
+    <p><button id="run">Run under a real click (user activation)</button></p>
+    <div id="results"></div>
+
+    <script>
+      // offscreen.js registers a runtime listener at load; stub just enough for it.
+      window.chrome = { runtime: { onMessage: { addListener() {} } } };
+    </script>
+    <script src="/offscreen/offscreen.js"></script>
+    <script>
+      const results = document.querySelector("#results");
+
+      function report(label, state, detail) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const name = document.createElement("div");
+        name.className = "label";
+        name.textContent = label;
+        const value = document.createElement("pre");
+        value.className = state;
+        value.textContent = detail;
+        row.append(name, value);
+        results.append(row);
+      }
+
+      async function run(label) {
+        results.textContent = "";
+        report("run", "info", label);
+        report(
+          "document.hasFocus()",
+          document.hasFocus() ? "pass" : "fail",
+          String(document.hasFocus())
+        );
+        report(
+          "navigator.userActivation.isActive",
+          navigator.userActivation?.isActive ? "pass" : "fail",
+          String(navigator.userActivation?.isActive)
+        );
+        report(
+          "copyImageToClipboard loaded",
+          typeof copyImageToClipboard === "function" ? "pass" : "fail",
+          typeof copyImageToClipboard
+        );
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 160;
+        canvas.height = 90;
+        const context = canvas.getContext("2d", { alpha: false });
+        context.fillStyle = "#b83b2d";
+        context.fillRect(0, 0, 160, 90);
+        context.fillStyle = "#ffffff";
+        context.font = "700 15px system-ui, sans-serif";
+        context.fillText("HOLD STILL", 16, 50);
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        const objectUrl = URL.createObjectURL(blob);
+        report("test PNG built", "pass", blob.type + ", " + blob.size + " bytes");
+
+        let copyEventFired = false;
+        document.addEventListener(
+          "copy",
+          () => {
+            copyEventFired = true;
+          },
+          { capture: true, once: true }
+        );
+
+        try {
+          await copyImageToClipboard(objectUrl);
+          report("copyImageToClipboard()", "pass", "resolved without throwing");
+        } catch (error) {
+          report("copyImageToClipboard()", "fail", error.message);
+        }
+
+        report("copy event fired", copyEventFired ? "pass" : "fail", String(copyEventFired));
+
+        // Read the clipboard back where the browser allows it.
+        try {
+          const items = await navigator.clipboard.read();
+          const types = items.flatMap((item) => item.types);
+          report(
+            "clipboard contains image/png",
+            types.includes("image/png") ? "pass" : "fail",
+            types.join(", ") || "(empty)"
+          );
+        } catch (error) {
+          report("clipboard readback", "info", "unavailable here: " + error.message);
+        }
+
+        URL.revokeObjectURL(objectUrl);
+      }
+
+      document.querySelector("#run").addEventListener("click", () => {
+        run("clicked: user activation present");
+      });
+
+      run("page load: no user activation");
+    </script>
+  </body>
+</html>

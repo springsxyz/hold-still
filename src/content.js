@@ -39,11 +39,14 @@
       return true;
     }
     if (message?.type === MESSAGE.prepareFullPage) {
-      prepareFullPage().then(sendResponse);
+      prepareFullPage().then(sendResponse, (error) => sendResponse(failure(error)));
       return true;
     }
     if (message?.type === MESSAGE.scrollTo) {
-      scrollAndSettle(message.x, message.y).then(sendResponse);
+      scrollAndSettle(message.x, message.y).then(
+        sendResponse,
+        (error) => sendResponse(failure(error))
+      );
       return true;
     }
     if (message?.type === MESSAGE.hideFixed) {
@@ -63,6 +66,15 @@
     }
     return false;
   });
+
+  // Answering with an error field keeps the message port open. Letting the
+  // promise reject instead drops the port, and the service worker then reports
+  // a generic validation failure rather than what actually went wrong.
+  function failure(error) {
+    return {
+      error: error?.message || String(error) || "The page could not be prepared."
+    };
+  }
 
   async function copyImageToClipboard(url) {
     if (!url) throw new Error("The screenshot image is missing.");
@@ -200,6 +212,8 @@
 
     await nextPaint();
 
+    const captureRect = getCaptureRect();
+
     return {
       mode,
       totalWidth: mode === "document"
@@ -218,15 +232,18 @@
             window.innerHeight
           )
         : scrollTarget.scrollHeight,
+      // The tile stride has to match what actually lands in the screenshot. A
+      // scroll panel can run past the viewport edge, and striding by its full
+      // clientWidth would leave unpainted stripes between tiles.
       viewportWidth: mode === "document"
         ? window.innerWidth
-        : scrollTarget.clientWidth,
+        : captureRect.width,
       viewportHeight: mode === "document"
         ? window.innerHeight
-        : scrollTarget.clientHeight,
+        : captureRect.height,
       windowViewportWidth: window.innerWidth,
       windowViewportHeight: window.innerHeight,
-      captureRect: getCaptureRect()
+      captureRect
     };
   }
 
@@ -410,7 +427,9 @@
     selection.appendChild(size);
     const hint = document.createElement("div");
     hint.className = "hint";
-    hint.innerHTML = "Drag to capture an area <kbd>Esc</kbd> to cancel";
+    const escapeKey = document.createElement("kbd");
+    escapeKey.textContent = "Esc";
+    hint.append("Drag to capture an area ", escapeKey, " to cancel");
     surface.append(...shades, selection, hint);
     shadow.append(style, surface);
     document.documentElement.appendChild(host);

@@ -8,10 +8,10 @@ Hold Still is a dependency-free Chrome and Edge extension that captures screensh
 - Current viewport captures exactly what is visible in the active tab.
 - Selected area adds a drag-to-select overlay, crops the visible tab to that rectangle, and produces the result.
 
-Choose the output in the popup:
+Choose the output in the popup. Copy is the default:
 
-- Download saves screenshots in a Hold Still folder inside the browser's Downloads directory.
-- Copy writes from the focused extension popup when available and uses a hidden extension document as fallback, without opening an extra window.
+- Copy tries the extension popup while it is open, then a hidden extension document, then the page itself, without opening an extra window. If Chrome refuses every route the PNG is saved to Downloads instead of being discarded, and the toast says so.
+- Download saves screenshots directly in the browser's Downloads directory, named for the page title, the capture mode, and the time.
 
 Hold Still remembers the output choice, including when keyboard shortcuts are used.
 
@@ -31,7 +31,7 @@ Open a normal website, click the Hold Still toolbar button, and choose a capture
 
 After updating the local files, click Reload on Hold Still at chrome://extensions or edge://extensions.
 
-The first time Copy is selected, Chrome asks for optional clipboard-write access. Download does not require clipboard access.
+Clipboard access is granted when the extension is installed, so switching between Copy and Download never interrupts a capture with a permission prompt.
 
 Default keyboard shortcuts:
 
@@ -56,6 +56,11 @@ Run the dependency-free smoke test:
 On Windows, regenerate the checked-in PNG icons with:
 
     powershell -ExecutionPolicy Bypass -File scripts/generate-icons.ps1
+
+Build the Chrome Web Store upload, which packages only the paths the manifest
+loads and leaves out tests, scripts and docs:
+
+    npm run package
 
 ## Privacy
 

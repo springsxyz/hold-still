@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Hold Still store screenshot</title>
+    <style>
+      html, body { margin: 0; padding: 0; }
+      body {
+        width: 1280px;
+        height: 800px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        gap: 72px;
+        padding: 0 88px;
+        box-sizing: border-box;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #17130f;
+        background:
+          radial-gradient(circle at 88% 8%, rgba(244, 114, 75, 0.22), transparent 42%),
+          radial-gradient(circle at 6% 96%, rgba(184, 59, 45, 0.12), transparent 40%),
+          #f8f5ef;
+      }
+      .copy { flex: 1; }
+      .mark {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 30px;
+      }
+      .mark span {
+        font-size: 21px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+      .mark svg {
+        width: 46px;
+        height: 46px;
+        padding: 10px;
+        box-sizing: border-box;
+        border-radius: 13px;
+        background: #b83b2d;
+        fill: none;
+        stroke: #ffffff;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      h1 {
+        margin: 0 0 20px;
+        font-size: 50px;
+        line-height: 1.08;
+        letter-spacing: -0.025em;
+        font-weight: 800;
+      }
+      h1 em { font-style: normal; color: #b83b2d; }
+      p {
+        margin: 0 0 32px;
+        font-size: 20px;
+        line-height: 1.5;
+        color: #6d6058;
+        max-width: 30ch;
+      }
+      ul { margin: 0; padding: 0; list-style: none; }
+      li {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        font-size: 17px;
+        font-weight: 600;
+        padding: 7px 0;
+        color: #3d342e;
+      }
+      li::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #b83b2d;
+        flex: none;
+      }
+      .device {
+        flex: none;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow:
+          0 2px 4px rgba(55, 40, 28, 0.06),
+          0 28px 70px rgba(55, 40, 28, 0.22);
+      }
+      iframe { display: block; width: 388px; height: 452px; border: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="copy">
+      <div class="mark">
+        <svg viewBox="0 0 24 24">
+          <path d="M7.5 5.5 9 3h6l1.5 2.5H19A2.5 2.5 0 0 1 21.5 8v9A2.5 2.5 0 0 1 19 19.5H5A2.5 2.5 0 0 1 2.5 17V8A2.5 2.5 0 0 1 5 5.5h2.5Z"></path>
+          <circle cx="12" cy="12.5" r="3.5"></circle>
+        </svg>
+        <span>Hold Still</span>
+      </div>
+      <h1>Capture the whole page.<br><em>Paste it anywhere.</em></h1>
+      <p>Full page, current viewport, or any area you drag. Copied or saved as a PNG.</p>
+      <ul>
+        <li>Scrolls and stitches long pages into one image</li>
+        <li>Keyboard shortcuts for every capture mode</li>
+        <li>Everything stays on your machine</li>
+      </ul>
+    </div>
+    <div class="device">
+      <iframe src="/popup/popup.html" title="Hold Still popup" scrolling="no"></iframe>
+    </div>
+
+    <script>
+      // popup.js cannot run outside the extension, so the status line would be
+      // caught in its pre-script default. Show what a real user actually sees.
+      const frame = document.querySelector("iframe");
+      frame.addEventListener("load", () => {
+        const status = frame.contentDocument?.querySelector("#status");
+        if (status) status.textContent = "Captures will be copied as PNG images.";
+      });
+    </script>
+  </body>
+</html>

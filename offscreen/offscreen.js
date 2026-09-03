@@ -200,17 +200,25 @@ async function cropSelection(dataUrl, selection, asDataUrl = false) {
   };
 }
 
+// A blob URL minted here belongs to the extension origin, so a content script
+// cannot fetch it. Re-encode the image as a data URL the page is allowed to read.
 async function materializeImage(url) {
-  const response = await fetch(url);
-  const sourceBlob = await response.blob();
-  const pngBlob = sourceBlob.type === "image/png"
-    ? sourceBlob
-    : new Blob([sourceBlob], { type: "image/png" });
+  if (!url) throw new Error("The screenshot image is missing.");
+
+  const image = await loadImage(url);
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  validateCanvasSize(canvas.width, canvas.height);
+
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("Chrome could not create an image canvas.");
+  context.drawImage(image, 0, 0);
 
   return {
-    url: URL.createObjectURL(pngBlob),
-    width: 0,
-    height: 0
+    url: canvas.toDataURL("image/png"),
+    width: canvas.width,
+    height: canvas.height
   };
 }
 

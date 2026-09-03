@@ -2,9 +2,8 @@ const captureButtons = [...document.querySelectorAll("[data-mode]")];
 const outputButtons = [...document.querySelectorAll("[data-output]")];
 const status = document.querySelector("#status");
 const POPUP_CLIPBOARD_MESSAGE = "HOLD_STILL_POPUP_COPY";
-let outputMode = "download";
+let outputMode = "copy";
 let statusResetTimer = null;
-let clipboardPermissionGranted = false;
 let outputChangePending = false;
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== POPUP_CLIPBOARD_MESSAGE) return false;
@@ -30,26 +29,16 @@ for (const button of outputButtons) {
   button.addEventListener("click", () => chooseOutput(button.dataset.output));
 }
 
+// clipboardWrite ships as a required permission, so choosing Copy no longer
+// negotiates anything: the popup reads the stored preference and writes it back.
 async function initializeOutput() {
   try {
-    const stored = await chrome.storage.local.get({ outputMode: "download" });
-    clipboardPermissionGranted = await chrome.permissions.contains({
-      permissions: ["clipboardWrite"]
-    });
-    outputMode = stored.outputMode === "copy" ? "copy" : "download";
-
-    if (
-      outputMode === "copy" &&
-      !clipboardPermissionGranted
-    ) {
-      outputMode = "download";
-      await chrome.storage.local.set({ outputMode });
-    }
-
+    const stored = await chrome.storage.local.get({ outputMode: "copy" });
+    outputMode = stored.outputMode === "download" ? "download" : "copy";
     renderOutput();
     setStatus(outputHint(outputMode), "neutral");
   } catch (error) {
-    outputMode = "download";
+    outputMode = "copy";
     renderOutput();
     setStatus(error.message || String(error), "error");
   }
@@ -62,38 +51,18 @@ async function chooseOutput(mode) {
     outputChangePending
   ) return;
 
+  // Paint the choice first so the toggle never lags behind the click, then
+  // roll back if the write fails.
+  const previousMode = outputMode;
   outputChangePending = true;
   outputMode = mode;
   renderOutput();
-  const needsPermission =
-    mode === "copy" && !clipboardPermissionGranted;
-  setStatus(
-    needsPermission
-      ? "Waiting for clipboard permission…"
-      : outputHint(mode),
-    needsPermission ? "working" : "neutral"
-  );
-
-  const persistSelection = chrome.storage.local.set({ outputMode });
+  setStatus(outputHint(mode), "neutral");
 
   try {
-    let granted = true;
-    if (needsPermission) {
-      granted = await chrome.permissions.request({
-        permissions: ["clipboardWrite"]
-      });
-      clipboardPermissionGranted = granted;
-    }
-
-    await persistSelection;
-    if (!granted) {
-      throw new Error("Clipboard access was not granted. Download is selected.");
-    }
-
-    setStatus(outputHint(outputMode), "neutral");
+    await chrome.storage.local.set({ outputMode });
   } catch (error) {
-    outputMode = "download";
-    await chrome.storage.local.set({ outputMode }).catch(() => {});
+    outputMode = previousMode;
     renderOutput();
     setStatus(error.message || String(error), "error");
   } finally {

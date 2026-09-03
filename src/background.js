@@ -18,8 +18,9 @@ const OFFSCREEN_PATH = "offscreen/offscreen.html";
 const OFFSCREEN_TARGET = "hold-still-offscreen";
 const POPUP_CLIPBOARD_MESSAGE = "HOLD_STILL_POPUP_COPY";
 const CAPTURE_INTERVAL_MS = 560;
-const MAX_CANVAS_SIDE = 32767;
-const MAX_CANVAS_PIXELS = 160000000;
+const CAPTURE_QUOTA_PATTERN = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i;
+const SETTINGS_VERSION = 2;
+const RESERVED_FILENAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 let creatingOffscreenDocument = null;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -58,6 +59,39 @@ chrome.commands.onCommand.addListener(async (command) => {
   runMode(tab.id, mode).catch((error) => reportFailure(tab.id, error));
 });
 
+chrome.runtime.onInstalled.addListener(() => {
+  migrateSettings().catch(() => {});
+});
+
+// Builds before 1.2.0 wrote outputMode: "download" on their own whenever
+// clipboardWrite was ungranted, so a stored "download" is usually residue from
+// that downgrade rather than a choice the user made. Clear it once so the Copy
+// default reaches profiles that ran an earlier build; anything chosen after the
+// migration is a real preference and survives later updates.
+async function migrateSettings() {
+  const stored = await chrome.storage.local.get({ settingsVersion: 1 });
+  if (stored.settingsVersion >= SETTINGS_VERSION) return;
+
+  await chrome.storage.local.remove("outputMode");
+  await chrome.storage.local.set({ settingsVersion: SETTINGS_VERSION });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  forgetTab(tabId, false);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  // A new document tears down the content script, so a selection overlay or a
+  // running job is gone whether or not the page managed to say so. Without
+  // this the tab stays marked busy and every later capture on it is refused.
+  if (changeInfo.status === "loading") forgetTab(tabId, true);
+});
+
+function forgetTab(tabId, resetBadge) {
+  const hadJob = activeJobs.delete(tabId);
+  const hadSelection = pendingSelections.delete(tabId);
+  if (resetBadge && (hadJob || hadSelection)) clearBadge(tabId);
+}
 
 async function runMode(tabId, mode) {
   if (!Number.isInteger(tabId)) throw new Error("No active tab was found.");
@@ -80,21 +114,22 @@ async function runMode(tabId, mode) {
 
   activeJobs.add(tabId);
   await setBadge(tabId, "...", "#2563eb");
-  let output = "download";
 
   try {
-    output = await getOutputMode();
+    const output = await getOutputMode();
+    let delivered;
+
     if (mode === "viewport") {
-      await captureViewport(tabId, output);
+      delivered = await captureViewport(tabId, output);
     } else if (mode === "full-page") {
-      await captureFullPage(tabId, output);
+      delivered = await captureFullPage(tabId, output);
     } else {
       throw new Error("Unknown capture mode.");
     }
 
     await setBadge(tabId, "OK", "#16a34a");
     setTimeout(() => clearBadge(tabId), 1800);
-    return { message: completionMessage(output) };
+    return { message: completionMessage(delivered) };
   } catch (error) {
     await setBadge(tabId, "!", "#dc2626");
     setTimeout(() => clearBadge(tabId), 3500);
@@ -108,7 +143,7 @@ async function captureViewport(tabId, output) {
   const tab = await chrome.tabs.get(tabId);
   await ensureContentScript(tabId);
   const dataUrl = await captureVisible(tab.windowId);
-  await deliverImage(
+  const delivered = await deliverImage(
     dataUrl,
     makeFilename(tab, "viewport"),
     output,
@@ -118,9 +153,10 @@ async function captureViewport(tabId, output) {
 
   notifyTab(
     tabId,
-    completionMessage(output, "Current viewport"),
+    completionMessage(delivered, "Current viewport"),
     "success"
   );
+  return delivered;
 }
 
 async function captureSelectedArea(tabId, selection) {
@@ -142,7 +178,7 @@ async function captureSelectedArea(tabId, selection) {
       asDataUrl: output === "copy"
     });
 
-    await deliverImage(
+    const delivered = await deliverImage(
       result.url,
       makeFilename(tab, "selection"),
       output,
@@ -153,7 +189,7 @@ async function captureSelectedArea(tabId, selection) {
     await setBadge(tabId, "OK", "#16a34a");
     notifyTab(
       tabId,
-      completionMessage(output, "Selected area"),
+      completionMessage(delivered, "Selected area"),
       "success"
     );
     setTimeout(() => clearBadge(tabId), 1800);
@@ -174,9 +210,7 @@ async function captureFullPage(tabId, output) {
   let lastCaptureAt = 0;
 
   try {
-    const page = await chrome.tabs.sendMessage(tabId, {
-      type: MESSAGE.prepareFullPage
-    });
+    const page = await sendToPage(tabId, { type: MESSAGE.prepareFullPage });
     validatePageMetrics(page);
     prepared = true;
 
@@ -189,7 +223,7 @@ async function captureFullPage(tabId, output) {
 
     for (const y of yPositions) {
       for (const x of xPositions) {
-        const scrollResult = await chrome.tabs.sendMessage(tabId, {
+        const scrollResult = await sendToPage(tabId, {
           type: MESSAGE.scrollTo,
           x,
           y
@@ -237,7 +271,7 @@ async function captureFullPage(tabId, output) {
     });
     stitchFinished = true;
 
-    await deliverImage(
+    const delivered = await deliverImage(
       result.url,
       makeFilename(tab, "full-page"),
       output,
@@ -247,9 +281,10 @@ async function captureFullPage(tabId, output) {
 
     notifyTab(
       tabId,
-      completionMessage(output, "Full-page screenshot"),
+      completionMessage(delivered, "Full-page screenshot"),
       "success"
     );
+    return delivered;
   } finally {
     if (stitchStarted && !stitchFinished) {
       sendOffscreen({
@@ -265,6 +300,14 @@ async function captureFullPage(tabId, output) {
       }
     }
   }
+}
+
+async function sendToPage(tabId, message) {
+  const response = await chrome.tabs.sendMessage(tabId, message);
+  // The content script reports failures in an error field rather than dropping
+  // the port, so surface its reason instead of a generic one.
+  if (response?.error) throw new Error(response.error);
+  return response;
 }
 
 async function ensureContentScript(tabId) {
@@ -292,26 +335,31 @@ async function captureVisible(windowId) {
   try {
     return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
   } catch (error) {
+    // Chromium caps captureVisibleTab at two calls a second. Drifting past the
+    // cap should cost one extra wait, not the whole multi-tile capture.
+    if (!CAPTURE_QUOTA_PATTERN.test(friendlyError(error))) {
+      throw new Error("Chrome could not capture this tab: " + friendlyError(error));
+    }
+  }
+
+  await delay(CAPTURE_INTERVAL_MS);
+
+  try {
+    return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+  } catch (error) {
     throw new Error("Chrome could not capture this tab: " + friendlyError(error));
   }
 }
 
 async function ensureOffscreenDocument() {
-  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
-  let exists = false;
+  // getContexts landed in Chrome 116, which the manifest requires, so there is
+  // no clients.matchAll fallback to keep working here.
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [chrome.runtime.getURL(OFFSCREEN_PATH)]
+  });
 
-  if (chrome.runtime.getContexts) {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: ["OFFSCREEN_DOCUMENT"],
-      documentUrls: [offscreenUrl]
-    });
-    exists = contexts.length > 0;
-  } else {
-    const matchedClients = await clients.matchAll();
-    exists = matchedClients.some((client) => client.url === offscreenUrl);
-  }
-
-  if (exists) return;
+  if (contexts.length > 0) return;
   if (creatingOffscreenDocument) {
     await creatingOffscreenDocument;
     return;
@@ -325,6 +373,11 @@ async function ensureOffscreenDocument() {
 
   try {
     await creatingOffscreenDocument;
+  } catch (error) {
+    // Chrome allows one offscreen document per extension. Two captures can
+    // still race past the getContexts check, and losing that race is not fatal:
+    // the document the capture needs exists either way.
+    if (!/single offscreen document/i.test(friendlyError(error))) throw error;
   } finally {
     creatingOffscreenDocument = null;
   }
@@ -349,26 +402,27 @@ async function downloadUrl(url, filename) {
 }
 
 async function deliverImage(url, filename, output, revokeAfterUse, tabId = null) {
-  if (output === "copy") {
-    try {
-      let copied = await tryClipboardPath(() => copyInPopup(url));
-      if (!copied && Number.isInteger(tabId)) {
-        copied = await tryClipboardPath(() => copyInTab(tabId, url));
-      }
-      if (!copied) {
-        await sendOffscreen({
-          action: "copy",
-          url
-        });
-      }
-    } finally {
-      if (revokeAfterUse) {
-        sendOffscreen({ action: "revoke", url }).catch(() => {});
-      }
-    }
-    return;
+  if (output !== "copy") {
+    await downloadImage(url, filename, revokeAfterUse);
+    return "download";
   }
 
+  try {
+    await copyToClipboard(url, tabId);
+  } catch {
+    // A stitched full page costs the user fifteen seconds of scrolling, so a
+    // blocked clipboard should downgrade to a file rather than discard it.
+    await downloadImage(url, filename, revokeAfterUse);
+    return "copy-fallback";
+  }
+
+  if (revokeAfterUse) {
+    sendOffscreen({ action: "revoke", url }).catch(() => {});
+  }
+  return "copy";
+}
+
+async function downloadImage(url, filename, revokeAfterUse) {
   try {
     const downloadId = await downloadUrl(url, filename);
     if (revokeAfterUse) {
@@ -382,6 +436,29 @@ async function deliverImage(url, filename, output, revokeAfterUse, tabId = null)
   }
 }
 
+async function copyToClipboard(url, tabId) {
+  // An open popup is a focused extension page, the most reliable place to
+  // reach the async clipboard.
+  if (await tryClipboardPath(() => copyInPopup(url))) return;
+
+  // The offscreen document shares the extension origin, so it can read a
+  // stitched blob URL directly. Keyboard shortcuts land here.
+  if (await tryClipboardPath(() => sendOffscreen({ action: "copy", url }))) return;
+
+  if (Number.isInteger(tabId)) {
+    const copiedInTab = await tryClipboardPath(async () => {
+      // Blob URLs belong to the extension origin, so a content script cannot
+      // fetch one. Hand the page a data URL it is allowed to read.
+      const pageUrl = url.startsWith("blob:")
+        ? (await sendOffscreen({ action: "materialize", url })).url
+        : url;
+      await copyInTab(tabId, pageUrl);
+    });
+    if (copiedInTab) return;
+  }
+
+  throw new Error("Chrome would not let Hold Still reach the clipboard.");
+}
 
 async function copyInPopup(url) {
   const response = await chrome.runtime.sendMessage({
@@ -412,23 +489,21 @@ async function tryClipboardPath(action) {
   }
 }
 
+// clipboardWrite is a required permission, so there is nothing to check at
+// runtime and nothing to downgrade. Reading the default must never write it
+// back: an earlier version reset the stored mode here, which quietly erased
+// the copy default on a profile's very first capture.
 async function getOutputMode() {
-  const stored = await chrome.storage.local.get({ outputMode: "download" });
-  if (stored.outputMode !== "copy") return "download";
-
-  const granted = await chrome.permissions.contains({
-    permissions: ["clipboardWrite"]
-  });
-  if (granted) return "copy";
-
-  await chrome.storage.local.set({ outputMode: "download" });
-  return "download";
+  const stored = await chrome.storage.local.get({ outputMode: "copy" });
+  return stored.outputMode === "download" ? "download" : "copy";
 }
 
-function completionMessage(output, subject = "Screenshot") {
-  return output === "copy"
-    ? subject + " copied to the clipboard."
-    : subject + " saved to Downloads.";
+function completionMessage(delivery, subject = "Screenshot") {
+  if (delivery === "copy") return subject + " copied to the clipboard.";
+  if (delivery === "copy-fallback") {
+    return subject + " saved to Downloads because Chrome blocked the clipboard.";
+  }
+  return subject + " saved to Downloads.";
 }
 
 function releaseUrlAfterDownload(downloadId, url) {
@@ -457,13 +532,24 @@ function releaseUrlAfterDownload(downloadId, url) {
 }
 
 function makeFilename(tab, kind) {
-  const title = (tab.title || "webpage")
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  // No directory segment: screenshots land straight in the browser's download
+  // directory. safeTitle strips separators so a page title cannot add one back.
+  return safeTitle(tab.title) + " - " + kind + " - " + stamp + ".png";
+}
+
+function safeTitle(rawTitle) {
+  const cleaned = (rawTitle || "")
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 80) || "webpage";
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return "Hold Still/" + title + " - " + kind + " - " + stamp + ".png";
+    .slice(0, 80)
+    // Windows silently drops a trailing dot or space from a filename.
+    .replace(/[. ]+$/, "")
+    .trim();
+
+  if (!cleaned || RESERVED_FILENAME.test(cleaned)) return "webpage";
+  return cleaned;
 }
 
 function tilePositions(total, viewport) {
@@ -524,18 +610,6 @@ function validateCaptureRect(rect) {
     rect.height <= 0
   ) {
     throw new Error("Could not locate the visible page area.");
-  }
-}
-
-function validateCanvasSize(width, height) {
-  if (
-    width > MAX_CANVAS_SIDE ||
-    height > MAX_CANVAS_SIDE ||
-    width * height > MAX_CANVAS_PIXELS
-  ) {
-    throw new Error(
-      "This page is too large for one PNG. Zoom out or capture it in selected sections."
-    );
   }
 }
 
