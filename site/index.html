@@ -96,6 +96,17 @@
         box-shadow: 0 1px 2px rgba(55, 40, 28, 0.16), 0 14px 30px rgba(184, 59, 45, 0.28);
       }
 
+      /* Until the listing is approved there is nothing to link to, so the call
+         to action states that rather than pointing at a dead URL. */
+      .cta-pending {
+        background: #e7ded2;
+        color: #6d6058;
+        box-shadow: none;
+        cursor: default;
+      }
+
+      .cta-pending:hover { transform: none; box-shadow: none; }
+
       .quiet {
         color: var(--muted);
         font-size: 15px;
@@ -168,8 +179,9 @@
       </ul>
 
       <div class="actions">
-        <!-- Replace with the listing URL once the extension is published. -->
-        <a class="cta" href="https://chromewebstore.google.com/detail/REPLACE_WITH_EXTENSION_ID">Add to Chrome</a>
+        <!-- Once the listing is approved, replace this span with:
+             <a class="cta" href="https://chromewebstore.google.com/detail/EXTENSION_ID">Add to Chrome</a> -->
+        <span class="cta cta-pending">Coming soon to Chrome</span>
         <a class="quiet" href="privacy.html">Privacy</a>
       </div>
 
