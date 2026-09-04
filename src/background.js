@@ -463,10 +463,11 @@ async function copyToClipboard(url, tabId) {
   // reach the async clipboard.
   if (await tryClipboardPath(() => copyInPopup(url))) return;
 
-  // The offscreen document shares the extension origin, so it can read a
-  // stitched blob URL directly. Keyboard shortcuts land here.
-  if (await tryClipboardPath(() => sendOffscreen({ action: "copy", url }))) return;
-
+  // The page comes before the offscreen document. It is focused, a selection
+  // drag has just given it user activation, and it can use the async clipboard
+  // API, which reports failure honestly. The offscreen document has none of
+  // that: execCommand there can return true while copying nothing, so trying it
+  // first would swallow the whole chain and leave the clipboard untouched.
   if (Number.isInteger(tabId)) {
     const copiedInTab = await tryClipboardPath(async () => {
       // Blob URLs belong to the extension origin, so a content script cannot
@@ -478,6 +479,10 @@ async function copyToClipboard(url, tabId) {
     });
     if (copiedInTab) return;
   }
+
+  // Last resort: no popup, no reachable page. A keyboard shortcut on a page
+  // that refuses injection lands here.
+  if (await tryClipboardPath(() => sendOffscreen({ action: "copy", url }))) return;
 
   throw new Error("Chrome would not let Hold Still reach the clipboard.");
 }

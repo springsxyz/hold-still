@@ -435,12 +435,17 @@ const copyOrder = backgroundSource.slice(
 );
 assert.ok(copyOrder.length > 0, "copyToClipboard must precede copyInPopup");
 assert.ok(
-  copyOrder.indexOf("copyInPopup") < copyOrder.indexOf('action: "copy"'),
-  "a focused popup is tried before the offscreen document"
+  copyOrder.indexOf("copyInPopup") < copyOrder.indexOf("copyInTab"),
+  "a focused popup is tried first"
 );
+// Regression: the offscreen document used to come second, and execCommand there
+// can return true while copying nothing. That reported success and stopped the
+// chain, so a selection copy silently left the clipboard untouched. The page is
+// focused and freshly activated by the drag, and the async clipboard API it uses
+// reports failure honestly, so it has to be tried before the offscreen document.
 assert.ok(
-  copyOrder.indexOf('action: "copy"') < copyOrder.indexOf("copyInTab"),
-  "the offscreen document is tried before the page"
+  copyOrder.indexOf("copyInTab") < copyOrder.indexOf('action: "copy"'),
+  "the page is tried before the offscreen document"
 );
 // A content script cannot fetch a blob URL minted on the extension origin.
 assert.ok(copyOrder.includes('action: "materialize"'));
@@ -487,6 +492,16 @@ assert.ok(viewportCaptureSource.includes("notifyTab("));
 assert.ok(contentSource.includes("findPrimaryScrollContainer"));
 assert.ok(contentSource.includes("HOLD_STILL_COPY_IMAGE"));
 assert.ok(contentSource.includes("navigator.clipboard.write"));
+
+// The worker hands this script data: URLs on purpose, because blob: ones belong
+// to the extension origin. A page's connect-src CSP can block fetch() of a
+// data: URL, so it has to be decoded here instead of fetched.
+assert.ok(
+  contentSource.includes("function readImageBlob"),
+  "the content script decodes data URLs rather than fetching them"
+);
+assert.ok(contentSource.includes('url.startsWith("data:")'));
+assert.ok(contentSource.includes("atob("));
 assert.ok(contentSource.includes("range.selectNode(image)"));
 assert.ok(contentSource.includes("right:20px"));
 assert.ok(contentSource.includes("bottom:20px"));

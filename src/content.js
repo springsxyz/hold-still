@@ -79,12 +79,7 @@
   async function copyImageToClipboard(url) {
     if (!url) throw new Error("The screenshot image is missing.");
 
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Chrome could not read the screenshot.");
-    const sourceBlob = await response.blob();
-    const pngBlob = sourceBlob.type === "image/png"
-      ? sourceBlob
-      : new Blob([sourceBlob], { type: "image/png" });
+    const pngBlob = await readImageBlob(url);
 
     if (
       navigator.clipboard?.write &&
@@ -101,6 +96,42 @@
     }
 
     await copyBlobWithSelection(pngBlob);
+  }
+
+  // A page's connect-src CSP can block fetch() of a data: URL, and the worker
+  // hands this script data: URLs precisely because blob: ones belong to the
+  // extension origin. Decode it here rather than asking the network stack for
+  // bytes we already hold.
+  async function readImageBlob(url) {
+    if (!url.startsWith("data:")) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Chrome could not read the screenshot.");
+      return asPng(await response.blob());
+    }
+
+    const comma = url.indexOf(",");
+    if (comma < 0) throw new Error("Chrome could not read the screenshot.");
+
+    const meta = url.slice("data:".length, comma);
+    const payload = url.slice(comma + 1);
+    const type = meta.split(";")[0] || "image/png";
+
+    if (!meta.includes("base64")) {
+      return asPng(new Blob([decodeURIComponent(payload)], { type }));
+    }
+
+    const binary = atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return asPng(new Blob([bytes], { type }));
+  }
+
+  function asPng(blob) {
+    return blob.type === "image/png"
+      ? blob
+      : new Blob([blob], { type: "image/png" });
   }
 
   async function copyBlobWithSelection(blob) {
