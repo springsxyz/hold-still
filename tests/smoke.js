@@ -545,16 +545,23 @@ vm.runInContext(offscreenSource, offscreenSandbox, { filename: "offscreen/offscr
 
 assert.equal(typeof offscreenMessageListener, "function");
 
-offscreenSandbox.drawTile(
-  {
-    scaleX: 2,
-    scaleY: 2,
-    context: {
-      drawImage(...argumentsList) {
-        drawnTile = argumentsList;
-      }
+// A panel inset 100px from the left and 50px down, scrolled to (30, 400), on a
+// 2x display. Source comes from the panel's rect in the tile; destination is
+// the panel's position in the window plus how far it has scrolled.
+const panelJob = () => ({
+  scaleX: 2,
+  scaleY: 2,
+  originX: 100,
+  originY: 50,
+  context: {
+    drawImage(...argumentsList) {
+      drawnTile = argumentsList;
     }
-  },
+  }
+});
+
+offscreenSandbox.drawTile(
+  panelJob(),
   { naturalWidth: 2400, naturalHeight: 1600 },
   {
     x: 30,
@@ -564,7 +571,39 @@ offscreenSandbox.drawTile(
 );
 assert.deepEqual(
   Array.from(drawnTile.slice(1)),
-  [200, 100, 1600, 1200, 60, 800, 1600, 1200]
+  [200, 100, 1600, 1200, 260, 900, 1600, 1200],
+  "a later tile lands at the panel's offset, not the canvas origin"
+);
+
+// Regression: cropping every tile to the scrolling panel threw away the fixed
+// chrome around it, so an app with a sidebar stitched into a sidebar-less
+// image. The opening tile now carries the whole window.
+drawnTile = null;
+offscreenSandbox.drawTile(
+  panelJob(),
+  { naturalWidth: 2400, naturalHeight: 1600 },
+  { x: 0, y: 0, captureRect: { left: 100, top: 50, width: 800, height: 600 } },
+  true
+);
+assert.deepEqual(
+  Array.from(drawnTile.slice(1)),
+  [0, 0],
+  "the first tile draws the entire window at the origin"
+);
+
+// Only the first tile does that: repeating it would stripe the sidebar down
+// the whole image.
+drawnTile = null;
+offscreenSandbox.drawTile(
+  panelJob(),
+  { naturalWidth: 2400, naturalHeight: 1600 },
+  { x: 0, y: 600, captureRect: { left: 100, top: 50, width: 800, height: 600 } },
+  true
+);
+assert.equal(
+  drawnTile.length,
+  9,
+  "a scrolled tile draws the panel only, even when flagged as first"
 );
 
 assert.throws(() => offscreenSandbox.validateCanvasSize(40000, 100), /too large/);

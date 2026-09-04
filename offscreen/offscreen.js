@@ -54,8 +54,20 @@ async function startStitch({ jobId, dataUrl, page, scroll }) {
   const image = await loadImage(dataUrl);
   const scaleX = image.naturalWidth / page.windowViewportWidth;
   const scaleY = image.naturalHeight / page.windowViewportHeight;
-  const outputWidth = Math.round(page.totalWidth * scaleX);
-  const outputHeight = Math.round(page.totalHeight * scaleY);
+
+  // When a panel scrolls inside fixed chrome, the panel sits at an offset in
+  // the window. Anchoring the stitch there leaves room for the sidebar and
+  // header that surround it, instead of cropping them away. In document mode
+  // the capture rect starts at the origin, so this is a no-op.
+  const originX = page.mode === "element" ? page.captureRect.left : 0;
+  const originY = page.mode === "element" ? page.captureRect.top : 0;
+
+  const outputWidth = Math.round(
+    Math.max(page.windowViewportWidth, originX + page.totalWidth) * scaleX
+  );
+  const outputHeight = Math.round(
+    Math.max(page.windowViewportHeight, originY + page.totalHeight) * scaleY
+  );
   validateCanvasSize(outputWidth, outputHeight);
 
   const canvas = document.createElement("canvas");
@@ -67,11 +79,11 @@ async function startStitch({ jobId, dataUrl, page, scroll }) {
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, outputWidth, outputHeight);
 
-  const job = { canvas, context, scaleX, scaleY };
+  const job = { canvas, context, scaleX, scaleY, originX, originY };
   stitchJobs.set(jobId, job);
 
   try {
-    drawTile(job, image, scroll);
+    drawTile(job, image, scroll, true);
   } catch (error) {
     stitchJobs.delete(jobId);
     throw error;
@@ -89,7 +101,15 @@ async function addTile({ jobId, dataUrl, scroll }) {
   return {};
 }
 
-function drawTile(job, image, scroll) {
+function drawTile(job, image, scroll, isFirstTile = false) {
+  // The opening tile carries whatever surrounds the scrolling panel: a sidebar,
+  // a header, a toolbar. Draw that whole window once so the capture keeps its
+  // context; every later tile paints only the panel, so none of it repeats.
+  if (isFirstTile && scroll.x === 0 && scroll.y === 0) {
+    job.context.drawImage(image, 0, 0);
+    return;
+  }
+
   const rect = scroll.captureRect;
   const sourceX = clamp(
     Math.round(rect.left * job.scaleX),
@@ -118,8 +138,8 @@ function drawTile(job, image, scroll) {
     sourceY,
     sourceWidth,
     sourceHeight,
-    Math.round(scroll.x * job.scaleX),
-    Math.round(scroll.y * job.scaleY),
+    Math.round((job.originX + scroll.x) * job.scaleX),
+    Math.round((job.originY + scroll.y) * job.scaleY),
     sourceWidth,
     sourceHeight
   );

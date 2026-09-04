@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Hold Still stitch harness</title>
+    <style>
+      body { margin: 0; padding: 20px; font: 13px/1.5 system-ui, sans-serif; background: #f8f5ef; }
+      h1 { font-size: 15px; margin: 0 0 4px; }
+      p { margin: 0 0 16px; color: #6d6058; }
+      .row { display: flex; gap: 24px; align-items: flex-start; }
+      figure { margin: 0; }
+      figcaption { font-weight: 700; margin-bottom: 6px; }
+      canvas, img { border: 1px solid #ccc3b5; background: #fff; }
+      #out { max-height: none; }
+      #report { margin-top: 16px; padding: 10px 12px; background: #0f172a; color: #e2e8f0;
+                font: 12px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Element-mode stitch: app shell with a scrolling panel</h1>
+    <p>Runs the real startStitch / addTile from offscreen/offscreen.js.</p>
+    <div class="row" id="tiles"></div>
+    <div class="row" style="margin-top:20px">
+      <figure>
+        <figcaption>Stitched result</figcaption>
+        <div id="out"></div>
+      </figure>
+    </div>
+    <pre id="report">running…</pre>
+
+    <script>
+      window.chrome = { runtime: { onMessage: { addListener() {} } } };
+    </script>
+    <script src="/offscreen/offscreen.js"></script>
+    <script>
+      // Window 800x500. Sidebar 0..200 full height. Header band 0..60 across the
+      // top. Panel inset at (200, 60), 600x440, holding 880px of content.
+      const W = 800, H = 500;
+      const L = 200, T = 60, PW = 600, PH = 440, SH = 880;
+
+      function makeViewport(scrollY) {
+        const canvas = document.createElement("canvas");
+        canvas.width = W;
+        canvas.height = H;
+        const c = canvas.getContext("2d");
+
+        c.fillStyle = "#ffffff";
+        c.fillRect(0, 0, W, H);
+
+        // Panel content: numbered bands every 80px of the 880px scroll height.
+        c.save();
+        c.beginPath();
+        c.rect(L, T, PW, PH);
+        c.clip();
+        for (let band = 0; band * 80 < SH; band += 1) {
+          const y = T + band * 80 - scrollY;
+          c.fillStyle = band % 2 ? "#e7ded2" : "#f4f1e9";
+          c.fillRect(L, y, PW, 80);
+          c.fillStyle = "#17130f";
+          c.font = "700 22px system-ui, sans-serif";
+          c.fillText("band " + String(band + 1).padStart(2, "0"), L + 18, y + 48);
+        }
+        c.restore();
+
+        // Fixed chrome, identical on every tile.
+        c.fillStyle = "#2a2521";
+        c.fillRect(0, 0, L, H);
+        c.fillStyle = "#c96a4f";
+        c.font = "700 18px system-ui, sans-serif";
+        c.fillText("SIDEBAR", 24, 40);
+        c.fillStyle = "#b83b2d";
+        c.fillRect(L, 0, W - L, T);
+        c.fillStyle = "#ffffff";
+        c.fillText("HEADER", L + 18, 38);
+
+        return canvas.toDataURL("image/png");
+      }
+
+      const page = {
+        mode: "element",
+        totalWidth: PW,
+        totalHeight: SH,
+        viewportWidth: PW,
+        viewportHeight: PH,
+        windowViewportWidth: W,
+        windowViewportHeight: H,
+        captureRect: { left: L, top: T, width: PW, height: PH }
+      };
+
+      (async () => {
+        const lines = [];
+        try {
+          const tileA = makeViewport(0);
+          const tileB = makeViewport(SH - PH);
+
+          const tileBox = document.querySelector("#tiles");
+          for (const [label, src] of [["tile 1 (scroll 0)", tileA], ["tile 2 (scroll 440)", tileB]]) {
+            const fig = document.createElement("figure");
+            const cap = document.createElement("figcaption");
+            cap.textContent = label;
+            const img = document.createElement("img");
+            img.src = src;
+            img.width = 300;
+            fig.append(cap, img);
+            tileBox.append(fig);
+          }
+
+          const jobId = "harness";
+          const started = await startStitch({
+            jobId,
+            dataUrl: tileA,
+            page,
+            scroll: { x: 0, y: 0, captureRect: page.captureRect }
+          });
+          lines.push("canvas: " + started.width + " x " + started.height);
+          lines.push("expected: " + Math.max(W, L + PW) + " x " + Math.max(H, T + SH));
+
+          await addTile({
+            jobId,
+            dataUrl: tileB,
+            scroll: { x: 0, y: SH - PH, captureRect: page.captureRect }
+          });
+
+          const canvas = stitchJobs.get(jobId).canvas;
+          const shown = document.createElement("img");
+          shown.src = canvas.toDataURL("image/png");
+          shown.width = 400;
+          document.querySelector("#out").append(shown);
+
+          // Probe pixels: is the sidebar present at the top, and is the panel
+          // continuous where the two tiles meet?
+          const ctx = canvas.getContext("2d");
+          const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data).slice(0, 3).join(",");
+          lines.push("");
+          lines.push("sidebar at (40, 40):        rgb(" + px(40, 40) + ")   expect dark 42,37,33");
+          lines.push("sidebar at (40, 480):       rgb(" + px(40, 480) + ")   expect dark 42,37,33");
+          lines.push("below sidebar (40, 700):    rgb(" + px(40, 700) + ")   expect white 255,255,255");
+          lines.push("header at (400, 20):        rgb(" + px(400, 20) + ")   expect red 184,59,45");
+          lines.push("panel seam above (400, 495): rgb(" + px(400, 495) + ")");
+          lines.push("panel seam below (400, 505): rgb(" + px(400, 505) + ")");
+          lines.push("panel bottom (400, 930):    rgb(" + px(400, 930) + ")   expect band colour, not white");
+          document.querySelector("#report").textContent = lines.join("\n");
+        } catch (error) {
+          document.querySelector("#report").textContent =
+            lines.join("\n") + "\nFAILED: " + error.message;
+        }
+      })();
+    </script>
+  </body>
+</html>
